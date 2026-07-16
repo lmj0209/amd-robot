@@ -5,12 +5,15 @@
 > Values are filled only from measured RGC output. `TODO` = not yet captured.
 
 - RGC instance: `u-7670-4289a66a` (2026-07-16 probe)
-- RGC image name: TODO
+- RGC image: **`amd-oneclick-base:rocm7.2.1-py3.12-v20260416`** — chosen; the
+  competition does not mandate a specific image
 - RGC image digest: TODO
-- GPU: **gfx1100 (RDNA3)**, 1 GPU visible via `amd-smi` (BDF 0000:03:00.0) — measured
-- GPU model / VRAM: TODO (gfx1100 is consistent with Radeon PRO W7900-class per
-  hello-rocm docs, but not yet confirmed from the instance itself)
-- ROCm version: TODO — run `rocminfo --version`
+- GPU: **gfx1100 (RDNA3)**, marketing name "AMD Radeon Graphics", Chip ID 0x744b,
+  96 CUs, ~48 GB VRAM → **Radeon PRO W7900** — measured via `rocminfo`
+- ROCm kernel module (ROCk): **6.16.13**; HSA runtime 1.18 — measured
+- ROCm userspace release: **7.2.1** (`rocm-core 7.2.1.70201-81~24.04`) — measured →
+  install `jax[rocm7-local]`; RDNA3 needs `HSA_OVERRIDE_GFX_VERSION=11.0.0`
+- CPU: 2× AMD EPYC 9334 (32-core), large RAM — measured
 - Python: **3.12.3 (GCC 13.3.0)** — measured
 - JAX/JAXLIB: TODO (not preinstalled)
 - JAX ROCm PJRT/plugin: TODO (must install the build matching gfx1100)
