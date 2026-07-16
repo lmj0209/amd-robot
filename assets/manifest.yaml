@@ -1,33 +1,36 @@
 schema_version: 1
-active_robot_route: undecided
+active_robot_route: go2_z1            # decided 2026-07-16; B2Piper demoted to stretch
 decision_deadline: "2026-07-20"
+menagerie_commit: TODO                # recorded by scripts/fetch_menagerie.sh
 
 assets:
+  - id: unitree_go2
+    role: primary_quadruped
+    source: https://github.com/google-deepmind/mujoco_menagerie (unitree_go2)
+    license: BSD-3-Clause
+    redistribution: allowed
+    files: [go2_mjx.xml, assets/*.obj]
+    repository_path: assets/menagerie/unitree_go2
+    sha256: TODO                      # fill from `sha256sum` after fetch
+
+  - id: unitree_z1_gripper
+    role: primary_arm_and_gripper
+    source: https://github.com/google-deepmind/mujoco_menagerie (unitree_z1)
+    license: BSD-3-Clause
+    redistribution: allowed
+    files: [z1_gripper.xml, assets/*.stl]
+    repository_path: assets/menagerie/unitree_z1
+    sha256: TODO
+
   - id: b2_piper
-    role: primary_robot
+    role: stretch_robot               # only if time allows after MVP
     source: ATEC assets and robot vendors
     license: TODO_VERIFY
     redistribution: forbidden_until_verified
     repository_path: null
     sha256: null
 
-  - id: unitree_go2
-    role: fallback_quadruped
-    source: https://github.com/google-deepmind/mujoco_menagerie
-    license: BSD-3-Clause
-    redistribution: TODO_VERIFY_FILES
-    repository_path: null
-    sha256: null
-
-  - id: unitree_z1_gripper
-    role: fallback_arm_and_gripper
-    source: https://github.com/google-deepmind/mujoco_menagerie
-    license: BSD-3-Clause
-    redistribution: TODO_VERIFY_FILES
-    repository_path: null
-    sha256: null
-
 rules:
-  - Do not copy an asset into the repository until its license is verified.
-  - Record source commit, modifications, repository path, and SHA256.
-  - Prefer a deterministic download script when redistribution is not permitted.
+  - Meshes (.obj/.stl) are large and gitignored; fetched by scripts/fetch_menagerie.sh.
+  - Record the menagerie source commit and file SHA256 for reproducibility.
+  - Do not ship any asset until its license is verified (Go2/Z1 are BSD-3-Clause, OK).
