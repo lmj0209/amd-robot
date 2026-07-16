@@ -1,7 +1,7 @@
 schema_version: 1
 active_robot_route: go2_z1            # decided 2026-07-16; B2Piper demoted to stretch
 decision_deadline: "2026-07-20"
-menagerie_commit: TODO                # recorded by scripts/fetch_menagerie.sh
+menagerie_commit: 71f066ad0be9cd271f7ed58c030243ef157af9f4  # 2026-07-16
 
 assets:
   - id: unitree_go2
