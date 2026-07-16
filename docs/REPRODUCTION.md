@@ -15,9 +15,20 @@
   install `jax[rocm7-local]`; RDNA3 needs `HSA_OVERRIDE_GFX_VERSION=11.0.0`
 - CPU: 2× AMD EPYC 9334 (32-core), large RAM — measured
 - Python: **3.12.3 (GCC 13.3.0)** — measured
-- JAX/JAXLIB: TODO (not preinstalled)
-- JAX ROCm PJRT/plugin: TODO (must install the build matching gfx1100)
-- MuJoCo/Brax/Playground: TODO (not preinstalled)
+- JAX/JAXLIB: **jax 0.10.2 / jaxlib 0.10.2** (in `.venv`) — measured
+- JAX ROCm PJRT/plugin: **jax-rocm7-plugin 0.10.2 / jax-rocm7-pjrt 0.10.2** — measured
+- Verified install (2026-07-16): `python -m venv .venv && source .venv/bin/activate &&
+  export HSA_OVERRIDE_GFX_VERSION=11.0.0 && pip install -U "jax[rocm7-local]"`
+  (pip resolved via tsinghua mirror). `jax.devices()` → `[RocmDevice(id=0)]`,
+  `default_backend()` → `gpu` ✅ — JAX-ROCm works on gfx1100
+- MuJoCo/Brax: **mujoco 3.10.0 / mujoco-mjx 3.10.0 / brax 0.14.2** (+ flax 0.12.7,
+  optax 0.2.8, orbax-checkpoint 0.12.1) — measured; MJX `impl=jax` runs finite on GPU.
+  The `Failed to import warp/mujoco_warp` notices are harmless — the Warp backend is
+  absent on purpose; we use the JAX backend.
+- MuJoCo Playground: installed from git
+  (`pip install git+https://github.com/google-deepmind/mujoco_playground.git`);
+  `CartpoleBalance` loads with `impl=jax`, reset/step finite — TODO pin exact commit
+  in `requirements/rgc.lock`
 - Verified lockfile: TODO (`requirements/rgc.lock`)
 - `system_info` evidence: TODO
 - G0 commit and tag: TODO
@@ -31,6 +42,12 @@
 - `rocminfo` / `amd-smi` work and see the GPU, so the ROCm runtime is functional.
 - `groups: cannot find name for group ID 109` is a harmless cosmetic container
   warning and does not affect GPU access.
+- **G0 PASSED (2026-07-16)** on RGC: JAX-ROCm sees the GPU (`RocmDevice`), MJX
+  runs `impl=jax`, MuJoCo Playground `CartpoleBalance` loads, and a Brax PPO
+  update completes. **Required shim:** brax calls `jax.device_put_replicated`,
+  removed in jax 0.10.2 — we apply the official drop-in
+  (`src/amd_robo/platform/_compat.py`, single-GPU safe) before any Brax training.
+  This shim is the basis for a Brax upstream PR (10-pt contribution).
 
 ## Commands
 

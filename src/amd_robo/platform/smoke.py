@@ -305,6 +305,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.n_envs < 1 or args.n_steps < 1:
         parser.error("--n-envs and --n-steps must be positive")
 
+    # brax <-> jax 0.10 compat shim (required for the PPO check on our stack).
+    from amd_robo.platform import _compat
+
+    _compat.apply_brax_compat()
+
     report: dict[str, Any] = {
         "versions": _distribution_versions(),
         "checks": {},
