@@ -31,7 +31,7 @@
   in `requirements/rgc.lock`
 - Verified lockfile: TODO (`requirements/rgc.lock`)
 - `system_info` evidence: TODO
-- G0 commit and tag: TODO
+- G0 commit and tag: **`g0-link`** (2026-07-16, on `main`)
 
 ## Findings (2026-07-16)
 
@@ -42,12 +42,13 @@
 - `rocminfo` / `amd-smi` work and see the GPU, so the ROCm runtime is functional.
 - `groups: cannot find name for group ID 109` is a harmless cosmetic container
   warning and does not affect GPU access.
-- **G0 PASSED (2026-07-16)** on RGC: JAX-ROCm sees the GPU (`RocmDevice`), MJX
-  runs `impl=jax`, MuJoCo Playground `CartpoleBalance` loads, and a Brax PPO
-  update completes. **Required shim:** brax calls `jax.device_put_replicated`,
-  removed in jax 0.10.2 — we apply the official drop-in
-  (`src/amd_robo/platform/_compat.py`, single-GPU safe) before any Brax training.
-  This shim is the basis for a Brax upstream PR (10-pt contribution).
+- **G0 PASSED (2026-07-16)** — `scripts/smoke_test.py` exits 0 on RGC (W7900):
+  JAX-ROCm GPU (`rocm:0`, "PJRT C API rocm 70200"), MJX `impl=jax` (256 envs,
+  ~97k env-steps/s diagnostic), MuJoCo Playground `CartpoleBalance` (playground
+  0.2.0), and a Brax PPO update with checkpoint save+reload. **Required shim:**
+  brax calls `jax.device_put_replicated`, removed in jax 0.10.2 — we apply the
+  official drop-in (`src/amd_robo/platform/_compat.py`, single-GPU safe) before
+  any Brax training. This shim is the basis for a Brax upstream PR (10-pt item).
 
 ## Commands
 

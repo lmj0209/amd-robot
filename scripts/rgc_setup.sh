@@ -63,8 +63,6 @@ PY
 # --- It is applied automatically by src/amd_robo/platform/_compat.py, which ---
 # --- smoke_test.py and our training code import. No manual action needed.   ---
 
-# =============================================================================
-# PENDING verification on RGC. Uncomment as each is confirmed.
-# =============================================================================
-# .venv/bin/pip install -e . --no-deps           # this project, editable
-# .venv/bin/python scripts/smoke_test.py         # Gate G0 fail-closed smoke test (Brax PPO + checkpoint roundtrip)
+# --- 9. Install this project (editable) and run the Gate G0 smoke test -----
+.venv/bin/pip install -e . --no-deps
+.venv/bin/python scripts/smoke_test.py    # G0 PASSED 2026-07-16 on RGC W7900 (expects exit 0)
