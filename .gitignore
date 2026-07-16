@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# JAX / build caches
+.jit-cache/
+xla_cache/
+build/
+dist/
+
+# ---- Large artifacts: NEVER commit (weights / videos / meshes / data) ----
+*.npz
+*.npy
+*.pt
+*.pkl
+*.ckpt
+*.safetensors
+*.h5
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.usd
+*.usda
+*.usdc
+*.dae
+*.stl
+*.obj
+*.glb
+*.png
+*.jpg
+*.jpeg
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Experiment outputs (keep the folder, ignore its contents)
+experiments/*
+!experiments/.gitkeep
+artifacts/*
+!artifacts/.gitkeep
+
+# Logs / tracking
+wandb/
+runs/
+*.log
+logs/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local-only notes (never leak Chinese/scratch/drafts into the English repo)
+NOTES.md
+TODO.local.md
+*.local.md
+*.draft.md
+_scratch/

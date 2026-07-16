@@ -1,0 +1,30 @@
+# =====================================================================
+# Dependency versions are intentionally UNPINNED.
+# Per project rules, pin exact versions ONLY AFTER Phase 0 verification on
+# Radeon Cloud (RGC). Then replace with `==<version>` and commit the lockfile.
+# See ../0_规划/计划.md (Phase 0 — version discipline).
+# =====================================================================
+
+# --- Physics + RL ---
+mujoco          # includes MJX (import mujoco.mjx)
+brax            # PPO trainer
+
+# --- JAX (ROCm build) ---
+# Install the ROCm jaxlib via the RGC container image or AMD wheels.
+# Do NOT add a CUDA jaxlib here. Plugin/jaxlib version decided in Phase 0.
+jax
+jaxlib
+
+# --- Config (decide exact set in Phase 1) ---
+# ml_collections
+# hydra-core
+# omegaconf
+
+# --- Rendering / reporting ---
+mediapy
+matplotlib
+numpy
+
+# --- Phase 0 TODO ---
+# wandb              # optional; keep CSV/JSON logging working without network
+# amd-smi bindings   # if a Python wrapper is used for GPU monitoring
