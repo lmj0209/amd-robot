@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "artifacts": [],
+  "required_fields": [
+    "id",
+    "kind",
+    "url",
+    "sha256",
+    "bytes",
+    "git_commit",
+    "config_sha256",
+    "license"
+  ],
+  "note": "Checkpoints and videos stay outside Git. Add immutable URLs and SHA256 values after they are produced."
+}

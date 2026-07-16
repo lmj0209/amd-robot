@@ -6,6 +6,12 @@ __pycache__/
 .venv/
 venv/
 .ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # JAX / build caches
 .jit-cache/
@@ -13,7 +19,7 @@ xla_cache/
 build/
 dist/
 
-# ---- Large artifacts: NEVER commit (weights / videos / meshes / data) ----
+# ---- Large artifacts: store externally and track them via a manifest ----
 *.npz
 *.npy
 *.pt
@@ -40,11 +46,27 @@ dist/
 *.tar.gz
 *.7z
 
-# Experiment outputs (keep the folder, ignore its contents)
+# Experiment outputs: keep only the reproducibility metadata in Git.
 experiments/*
-!experiments/.gitkeep
+!experiments/README.md
+!experiments/**/
+!experiments/**/config.yaml
+!experiments/**/manifest.json
+!experiments/**/result.md
 artifacts/*
-!artifacts/.gitkeep
+!artifacts/README.md
+!artifacts/manifest.json
+
+# Evaluator-facing figures are intentionally versioned.
+!benchmarks/figures/*.png
+!benchmarks/figures/*.jpg
+!docs/**/*.png
+!docs/**/*.jpg
+!report/**/*.png
+!report/**/*.jpg
+
+# Only explicitly approved redistributable assets may bypass mesh ignores.
+!assets/redistributable/**
 
 # Logs / tracking
 wandb/

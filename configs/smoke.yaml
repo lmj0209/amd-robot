@@ -1,0 +1,8 @@
+schema_version: 1
+require_rocm: true
+require_mjx_impl: jax
+num_envs: 256
+num_steps: 1000
+require_playground: true
+require_ppo_update: true
+require_checkpoint_roundtrip: true

@@ -13,8 +13,11 @@ are unconfirmed.
 | Brax | TODO | Apache-2.0 | https://github.com/google/brax | none |
 | MuJoCo Playground | TODO | Apache-2.0 | https://github.com/google-deepmind/mujoco_playground | none |
 | JAX | TODO | Apache-2.0 | https://github.com/google/jax | none |
+| JAX ROCm PJRT | TODO | TODO_VERIFY | AMD repository for the selected RGC ROCm release | none |
+| JAX ROCm plugin | TODO | TODO_VERIFY | AMD repository for the selected RGC ROCm release | none |
 
-> Pin exact versions in `requirements.txt` after Phase 0 verification on RGC.
+> Pin the complete compatible set in `requirements/rgc.lock` after Phase 0
+> verification on RGC.
 
 ## Robot / Asset Models
 

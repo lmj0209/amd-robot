@@ -1,0 +1,14 @@
+# TEMPLATE ONLY -- do not install this file.
+#
+# After G0, create requirements/rgc.lock containing exact versions for:
+# - jax
+# - jaxlib
+# - the AMD jax ROCm PJRT package
+# - the AMD jax ROCm plugin package
+# - mujoco
+# - brax
+# - playground (MuJoCo Playground distribution)
+# - every package in base.in
+#
+# Record the RGC image name/digest and GPU architecture next to the lockfile in
+# docs/REPRODUCTION.md. Do not guess package versions or wheel URLs.

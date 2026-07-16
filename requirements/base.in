@@ -1,0 +1,10 @@
+# Application-level dependencies. Resolve and pin these only after the RGC
+# JAX ROCm stack is installed and verified.
+mujoco
+brax
+playground
+ml-collections
+numpy
+mediapy
+matplotlib
+PyYAML

@@ -1,0 +1,20 @@
+schema_version: 1
+algorithm: brax_ppo
+seed: 0
+
+curriculum:
+  - stage: stand
+  - stage: locomotion
+  - stage: approach_align_push
+  - stage: joint_finetune
+
+ppo:
+  num_timesteps: TODO_RGC
+  num_envs: TODO_RGC
+  episode_length: TODO_TASK
+  learning_rate: TODO_SMOKE
+  checkpoint_interval: TODO_SMOKE
+
+logging:
+  local_csv: true
+  wandb_optional: true
