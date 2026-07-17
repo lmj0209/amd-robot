@@ -22,6 +22,15 @@ assets:
     repository_path: assets/menagerie/unitree_z1
     sha256: TODO
 
+  - id: go2_z1
+    role: assembled_robot_model       # 19 DoF: 12 leg + 6 arm + 1 gripper (G1, 2026-07-17)
+    source: derived from unitree_go2 + unitree_z1 by scripts/build_go2_z1.py
+    license: BSD-3-Clause             # inherits BSD-3 from Go2/Z1 menagerie assets
+    redistribution: allowed
+    files: [go2_z1.xml]
+    repository_path: assets/menagerie/go2_z1
+    sha256: af74f038641b5289588584a492a4a0996e57390586e6980bc621455f7123fd19
+
   - id: b2_piper
     role: stretch_robot               # only if time allows after MVP
     source: ATEC assets and robot vendors
