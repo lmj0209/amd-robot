@@ -28,6 +28,7 @@ from amd_robo.contracts import ACTION_LAYOUT, TaskPhase
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_XML = REPO_ROOT / "assets" / "menagerie" / "go2_z1" / "go2_z1.xml"
+FOOT_GEOM_NAMES = ("FL", "FR", "RL", "RR")
 
 # Leg/arm/gripper layout mirrors ACTION_LAYOUT. Slice 1 zeroes [12:19] so only
 # the 12 leg actuators respond; the arm and gripper are held at their home ctrl.
@@ -61,11 +62,25 @@ class Go2Z1Env(MjxEnv):
         action_scale: float = 0.25,
         tilt_limit_deg: float = 60.0,
         mask_arm: bool = True,
+        foot_condim: int | None = None,
+        bound_observations: bool = True,
     ) -> None:
         self._xml_path = str(xml_path)
         self._mj_model = mujoco.MjModel.from_xml_path(self._xml_path)
         if self._mj_model.nkey > 0:
             self._mj_model.qpos0[:] = self._mj_model.key_qpos[0]
+        if foot_condim is not None:
+            if foot_condim not in (1, 3, 4, 6):
+                raise ValueError(
+                    f"foot_condim must be one of 1, 3, 4, or 6; got {foot_condim}"
+                )
+            for name in FOOT_GEOM_NAMES:
+                geom_id = mujoco.mj_name2id(
+                    self._mj_model, mujoco.mjtObj.mjOBJ_GEOM, name
+                )
+                if geom_id < 0:
+                    raise ValueError(f"foot geom not found: {name}")
+                self._mj_model.geom_condim[geom_id] = foot_condim
         self._mjx_model = mjx.put_model(self._mj_model, impl="jax")
         self._home_qpos = jnp.asarray(self._mj_model.qpos0)
         self._home_ctrl = (
@@ -76,6 +91,7 @@ class Go2Z1Env(MjxEnv):
         self._action_scale = float(action_scale)
         self._tilt_limit = jnp.radians(float(tilt_limit_deg))
         self._mask_arm = bool(mask_arm)
+        self._bound_observations = bool(bound_observations)
         config = config_dict.ConfigDict(
             {"ctrl_dt": float(ctrl_dt), "sim_dt": float(self._mj_model.opt.timestep)}
         )
@@ -176,7 +192,7 @@ class Go2Z1Env(MjxEnv):
         joint_vel = qvel[6:]
         joint_pos_error = joint_pos - self._home_qpos[7:]
         phase_onehot = jax.nn.one_hot(phase, len(TaskPhase))
-        return jnp.concatenate(
+        obs = jnp.concatenate(
             [
                 projected_gravity,
                 base_lin_vel,
@@ -186,7 +202,15 @@ class Go2Z1Env(MjxEnv):
                 last_action,
                 phase_onehot,
             ]
-        ).astype(jnp.float32)
+        )
+        if self._bound_observations:
+            # Contact solvers can produce a very large but still finite velocity
+            # on the transition immediately before termination.  Keep that
+            # transition from poisoning Brax's running observation statistics.
+            # Playground's locomotion environments use the same +/-100 bound.
+            obs = jnp.nan_to_num(obs, nan=0.0, posinf=100.0, neginf=-100.0)
+            obs = jnp.clip(obs, -100.0, 100.0)
+        return obs.astype(jnp.float32)
 
     @staticmethod
     def _tilt_rad(data) -> jax.Array:

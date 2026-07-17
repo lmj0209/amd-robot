@@ -13,7 +13,7 @@ if str(SRC) not in sys.path:
 import jax
 import jax.numpy as jnp
 
-from amd_robo.envs.go2_z1 import Go2Z1Env
+from amd_robo.envs.go2_z1 import FOOT_GEOM_NAMES, Go2Z1Env
 from amd_robo.envs.protocol import ProjectMjxEnv
 from amd_robo.platform.smoke import _block_tree, _tree_is_finite
 
@@ -23,6 +23,12 @@ def test_env_matches_contract() -> None:
     assert env.action_size == 19
     assert isinstance(env, ProjectMjxEnv)
     assert getattr(env.mjx_model.impl, "value", None) == "jax"
+
+
+def test_foot_condim_override() -> None:
+    env = Go2Z1Env(foot_condim=1)
+    for name in FOOT_GEOM_NAMES:
+        assert env.mj_model.geom(name).condim == 1
 
 
 def test_reset_step_finite_single_env() -> None:
