@@ -116,7 +116,7 @@ class Go2Z1Env(MjxEnv):
             data=data,
             obs=self._observation(data, action, phase),
             reward=jnp.zeros(()),
-            done=jnp.zeros((), dtype=bool),
+            done=jnp.zeros(()),
             metrics={"tilt_deg": jnp.zeros(()), "base_height": data.qpos[2]},
             info=info,
         )
@@ -140,11 +140,15 @@ class Go2Z1Env(MjxEnv):
             data = mjx.step(self._mjx_model, data)
 
         tilt = self._tilt_rad(data)
+        # done is float32 (0.0/1.0): Brax's EpisodeWrapper derives info
+        # episode_done/truncation from state.done via *_like(state.done), so a
+        # bool done makes those fields bool/int32 in step while reset inits them
+        # float32, breaking the scan carry type check.
         done = (
             ~jnp.all(jnp.isfinite(data.qpos))
             | ~jnp.all(jnp.isfinite(data.qvel))
             | (tilt > self._tilt_limit)
-        )
+        ).astype(jnp.float32)
         info = {**state.info, "last_action": action}
         metrics = {
             **state.metrics,
