@@ -238,8 +238,14 @@ def main() -> int:
         ppo_config["normalize_observations"] and not args.no_normalize_observations
     )
     if args.eval_only:
-        if not args.params_in:
-            parser.error("--eval-only requires --params-in")
+        eval_sources = int(bool(args.params_in)) + int(
+            bool(args.resume_training_state)
+        )
+        if eval_sources != 1:
+            parser.error(
+                "--eval-only requires exactly one of --params-in or "
+                "--resume-training-state"
+            )
         num_timesteps = 0
     if args.params_in and args.resume_training_state:
         parser.error("--params-in and --resume-training-state are mutually exclusive")
@@ -250,11 +256,9 @@ def main() -> int:
         parser.error(
             "training-session metric migration requires --resume-training-state"
         )
-    if args.eval_only and (
-        args.skip_eval or args.training_state_dir or args.resume_training_state
-    ):
+    if args.eval_only and (args.skip_eval or args.training_state_dir):
         parser.error(
-            "--eval-only cannot be combined with checkpoint, resume, or --skip-eval"
+            "--eval-only cannot be combined with checkpoint output or --skip-eval"
         )
     if (
         num_timesteps < 0
