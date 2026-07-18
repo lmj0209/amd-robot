@@ -15,14 +15,14 @@ ROCm 7.2.1, jax 0.10.2 + jax-rocm7-plugin/pjrt 0.10.2, mujoco-mjx 3.10.0):
     combination of (long scan) x (complex mjx.step body) x (vmap) on this GPU.
 
     The same 1000 steps run as SEQUENTIAL single-step calls reusing one compiled
-    vmap kernel -- what _probe_sequential below does -- stay finite, so the model
-    and physics are sound. The crash is an XLA/ROCm limitation on long fused
-    scans, not a model bug.
+    vmap kernel -- what _probe_sequential below does -- stay finite. This
+    separates raw-physics stability from the XLA/ROCm long-fusion failure, but
+    does not by itself qualify an environment, reward, or PPO update.
 
-    Practical impact: PPO training is unaffected because Brax rollouts scan over
-    a small unroll_length (tens of steps), not a whole episode. Keep
-    unroll_length modest. Use --repro-scan-segfault to run the crashing fused-scan
-    variant captured as upstream bug-report evidence (it may dump core).
+    Practical impact: keep the environment control kernel at five physics
+    substeps and compiled Brax training scans at two on the measured gfx1100
+    stack. Use --repro-scan-segfault only for upstream bug-report evidence (it
+    may dump core).
 """
 
 from __future__ import annotations
@@ -31,12 +31,13 @@ import argparse
 import json
 import time
 import traceback
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 # Source layout: <repo>/src/amd_robo/platform/rollout_probe.py -> repo root.
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_XML = REPO_ROOT / "assets" / "menagerie" / "unitree_go2" / "go2_mjx.xml"
+DEFAULT_XML = REPO_ROOT / "assets" / "menagerie" / "go2_z1" / "scene_mjx.xml"
 
 # Reuse the G0 helpers so the finite/throughput logic stays identical to the
 # accepted smoke test rather than diverging.
@@ -55,14 +56,16 @@ def _load_batched(xml_path: Path, n_envs: int) -> tuple[Any, Any]:
     from mujoco import mjx
 
     model_cpu = mujoco.MjModel.from_xml_path(str(xml_path))
-    if model_cpu.nkey > 0:
-        model_cpu.qpos0[:] = model_cpu.key_qpos[0]
-
     model = mjx.put_model(model_cpu, impl="jax")
     data = mjx.make_data(model_cpu, impl="jax")
-    # Hold the home pose: default ctrl=0 leaves Go2 torque-free and it collapses.
-    if model_cpu.nkey > 0 and model_cpu.key_ctrl.shape[1] > 0:
-        data = data.replace(ctrl=jnp.asarray(model_cpu.key_ctrl[0]))
+    # Start from the keyframe without overwriting model.qpos0. Hinge kinematics
+    # are relative to the compiled qpos0; replacing it with key_qpos makes the
+    # bent home legs appear straight and can put the feet deep below ground.
+    if model_cpu.nkey > 0:
+        data = data.replace(qpos=jnp.asarray(model_cpu.key_qpos[0]))
+        if model_cpu.key_ctrl.shape[1] > 0:
+            data = data.replace(ctrl=jnp.asarray(model_cpu.key_ctrl[0]))
+        data = mjx.forward(model, data)
 
     batched = jax.tree_util.tree_map(
         lambda value: jnp.array(
@@ -170,8 +173,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--n-envs and --n-steps must be positive")
     if not args.xml.exists():
         parser.error(
-            f"model XML not found: {args.xml} "
-            "(run scripts/fetch_menagerie.sh first)"
+            f"model XML not found: {args.xml} (run scripts/fetch_menagerie.sh first)"
         )
 
     import jax

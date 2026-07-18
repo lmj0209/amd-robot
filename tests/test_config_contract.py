@@ -41,15 +41,38 @@ def test_standing_config_preserves_rocm_training_guardrails() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "standing.yaml").read_text())
 
     assert config["algorithm"] == "brax_ppo"
+    assert config["environment"]["control_timestep"] == 0.01
     assert config["environment"]["foot_condim"] == 6
+    assert config["reward"] == {
+        "profile": "smooth_height_velocity_pose_v1",
+        "termination_cost": 2.0,
+        "height_sigma": 0.02,
+        "linear_velocity_sigma": 0.25,
+        "angular_velocity_sigma": 0.25,
+        "linear_velocity_scale": 1.0,
+        "angular_velocity_scale": 0.5,
+        "pose_scale": 0.5,
+        "alive_scale": 0.1,
+        "action_cost_scale": 0.001,
+        "action_rate_cost_scale": 0.01,
+    }
+    assert config["status"] == "standing_qualified_zero_residual"
+    assert config["ppo"]["num_timesteps"] == 5120
+    assert config["ppo"]["episode_length"] == 128
+    assert config["ppo"]["learning_rate"] == 0.0001
     assert config["rocm_guardrails"] == {
+        "max_physics_substeps_per_control": 5,
         "max_training_steps_per_host_call": 2,
         "brax_run_evals": False,
     }
     assert config["manual_evaluation"]["implementation"] == ("sequential_python_loop")
+    assert config["manual_evaluation"]["repeat_count"] == 8
+    assert config["manual_evaluation"]["height_tolerance"] == 0.2
     assert config["checkpoint"] == {
         "scope": "full_training_session",
         "interval_steps": 5120,
         "includes_rollout_state": True,
+        "policy_snapshot_scope": "inference_params",
+        "policy_snapshot_interval_steps": 5120,
     }
-    assert config["precision"]["status"] == "pending_multi_seed_ab"
+    assert config["precision"]["status"] == "default_measured_for_diagnostic"

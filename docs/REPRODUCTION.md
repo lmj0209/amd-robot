@@ -59,7 +59,14 @@ only after they run successfully from a clean RGC environment.
 
 The gfx1100-safe standing run consumes the committed configuration, bounds every
 compiled Brax training scan to two steps, and performs evaluation with a
-sequential Python loop:
+sequential Python loop. The assembled robot must be loaded through
+`assets/menagerie/go2_z1/scene_mjx.xml`: the robot-only XML has no floor.
+Never replace MuJoCo's compiled `qpos0` with the home keyframe; joint coordinates
+are defined relative to that reference. On this gfx1100 stack the measured
+control-kernel limit is five physics substeps (`ctrl_dt=0.01`); ten substeps
+failed during CompileAndLoad with `ROCM_ERROR_ILLEGAL_ADDRESS`.
+
+The validated short GPU qualification used:
 
 ```bash
 export HSA_OVERRIDE_GFX_VERSION=11.0.0
@@ -68,6 +75,28 @@ export HIP_DEVICE_LIB_PATH=/opt/rocm-7.2.1/lib/llvm/lib/clang/22/lib/amdgcn/bitc
 export XLA_FLAGS="--xla_gpu_enable_command_buffer="
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
+/workspace/.venv/bin/python scripts/standing_learn_smoke.py \
+  --config configs/evidence/standing_ground_2026-07-18.yaml \
+  --num-timesteps 5120 \
+  --episode-length 128 \
+  --skip-eval \
+  --params-out /workspace/evidence/standing_ground_gpu_5120.params
+
+/workspace/.venv/bin/python scripts/standing_learn_smoke.py \
+  --config configs/evidence/standing_ground_2026-07-18.yaml \
+  --eval-only \
+  --params-in /workspace/evidence/standing_ground_gpu_5120.params
+```
+
+The eight-repeat evaluation accepted the zero-residual home-PD baseline
+(25,600 control transitions, zero done/non-finite/height-outlier events) and
+rejected the short trained parameters because reward and tilt were worse. A
+long standing run is therefore not part of the current plan; Stage 1 proceeds
+to command-conditioned locomotion.
+
+For any future long standing diagnostic, save the complete training session:
+
+```bash
 /workspace/.venv/bin/python scripts/standing_learn_smoke.py \
   --config configs/standing.yaml \
   --training-state-dir /workspace/checkpoints/standing

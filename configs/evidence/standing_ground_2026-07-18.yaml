@@ -1,5 +1,5 @@
 schema_version: 1
-status: standing_qualified_zero_residual
+status: standing_qualification
 algorithm: brax_ppo
 seed: 0
 
@@ -24,9 +24,9 @@ reward:
   action_rate_cost_scale: 0.01
 
 ppo:
-  num_timesteps: 5120
+  num_timesteps: 1048576
   num_envs: 64
-  episode_length: 128
+  episode_length: 1000
   unroll_length: 4
   batch_size: 16
   num_minibatches: 4
@@ -55,13 +55,13 @@ manual_evaluation:
 
 checkpoint:
   scope: full_training_session
-  interval_steps: 5120
+  interval_steps: 1048576
   includes_rollout_state: true
   policy_snapshot_scope: inference_params
-  policy_snapshot_interval_steps: 5120
+  policy_snapshot_interval_steps: 131072
 
 precision:
-  status: default_measured_for_diagnostic
+  status: pending_multi_seed_ab
   candidates:
     - default
     - highest

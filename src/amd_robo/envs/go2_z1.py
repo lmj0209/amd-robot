@@ -27,7 +27,7 @@ from mujoco_playground._src.mjx_env import MjxEnv, State
 from amd_robo.contracts import ACTION_LAYOUT, TaskPhase
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_XML = REPO_ROOT / "assets" / "menagerie" / "go2_z1" / "go2_z1.xml"
+DEFAULT_XML = REPO_ROOT / "assets" / "menagerie" / "go2_z1" / "scene_mjx.xml"
 FOOT_GEOM_NAMES = ("FL", "FR", "RL", "RR")
 
 # Leg/arm/gripper layout mirrors ACTION_LAYOUT. Slice 1 zeroes [12:19] so only
@@ -35,7 +35,7 @@ FOOT_GEOM_NAMES = ("FL", "FR", "RL", "RR")
 _LEG_MASK = jnp.concatenate(
     [
         jnp.ones(ACTION_LAYOUT.leg.stop - ACTION_LAYOUT.leg.start),  # 12 legs
-        jnp.zeros(ACTION_LAYOUT.size - ACTION_LAYOUT.leg.stop),       # 7 arm+gripper
+        jnp.zeros(ACTION_LAYOUT.size - ACTION_LAYOUT.leg.stop),  # 7 arm+gripper
     ]
 )
 
@@ -53,7 +53,7 @@ def _rotmat(quat: jax.Array) -> jax.Array:
 
 
 class Go2Z1Env(MjxEnv):
-    """Slice-1 Go2+Z1 environment: locomotion-only, finite under JIT/VMAP."""
+    """Slice-1 Go2+Z1 flat-ground environment, finite under JIT and VMAP."""
 
     def __init__(
         self,
@@ -67,8 +67,6 @@ class Go2Z1Env(MjxEnv):
     ) -> None:
         self._xml_path = str(xml_path)
         self._mj_model = mujoco.MjModel.from_xml_path(self._xml_path)
-        if self._mj_model.nkey > 0:
-            self._mj_model.qpos0[:] = self._mj_model.key_qpos[0]
         if foot_condim is not None:
             if foot_condim not in (1, 3, 4, 6):
                 raise ValueError(
@@ -82,7 +80,11 @@ class Go2Z1Env(MjxEnv):
                     raise ValueError(f"foot geom not found: {name}")
                 self._mj_model.geom_condim[geom_id] = foot_condim
         self._mjx_model = mjx.put_model(self._mj_model, impl="jax")
-        self._home_qpos = jnp.asarray(self._mj_model.qpos0)
+        self._home_qpos = jnp.asarray(
+            self._mj_model.key_qpos[0]
+            if self._mj_model.nkey > 0
+            else self._mj_model.qpos0
+        )
         self._home_ctrl = (
             jnp.asarray(self._mj_model.key_ctrl[0])
             if self._mj_model.nkey > 0 and self._mj_model.key_ctrl.shape[1] > 0

@@ -71,26 +71,32 @@ def _load_config(path: str | None) -> tuple[dict, str | None]:
 
 def _config_defaults(config: dict) -> dict:
     environment = config.get("environment", {})
+    reward = config.get("reward", {})
     ppo = config.get("ppo", {})
     guardrails = config.get("rocm_guardrails", {})
     evaluation = config.get("manual_evaluation", {})
     checkpoint = config.get("checkpoint", {})
     return {
         "num_timesteps": ppo.get("num_timesteps", 512),
+        "episode_length": ppo.get("episode_length", 64),
         "training_steps_per_host_call": guardrails.get(
             "max_training_steps_per_host_call", 2
         ),
         "learning_rate": ppo.get("learning_rate", 3e-4),
         "max_grad_norm": ppo.get("max_grad_norm", 0.0),
         "foot_condim": environment.get("foot_condim"),
+        "control_timestep": environment.get("control_timestep", 0.02),
+        "termination_cost": reward.get("termination_cost", 1.0),
         "unsafe_reward": not environment.get("safe_reward", True),
         "unbounded_observations": not environment.get("bounded_observations", True),
         "no_reset_randomization": not environment.get("randomized_reset", True),
         "learning_rate_schedule": ppo.get("learning_rate_schedule", "NONE"),
         "desired_kl": ppo.get("desired_kl", 0.01),
         "seed": config.get("seed", 0),
+        "eval_repeats": evaluation.get("repeat_count", 1),
         "skip_eval": not evaluation.get("enabled", True),
         "training_state_interval": checkpoint.get("interval_steps", 0),
+        "policy_snapshot_interval": checkpoint.get("policy_snapshot_interval_steps", 0),
     }
 
 
@@ -102,10 +108,30 @@ class Go2Z1StandingEnv(Go2Z1Env):
         *args,
         sanitize_reward=True,
         randomize_reset=True,
+        termination_cost=1.0,
+        height_sigma=0.02,
+        linear_velocity_sigma=0.25,
+        angular_velocity_sigma=0.25,
+        linear_velocity_scale=1.0,
+        angular_velocity_scale=0.5,
+        pose_scale=0.5,
+        alive_scale=0.1,
+        action_cost_scale=0.001,
+        action_rate_cost_scale=0.01,
         **kwargs,
     ):
         self._sanitize_reward = bool(sanitize_reward)
         self._randomize_reset = bool(randomize_reset)
+        self._termination_cost = float(termination_cost)
+        self._height_sigma = float(height_sigma)
+        self._linear_velocity_sigma = float(linear_velocity_sigma)
+        self._angular_velocity_sigma = float(angular_velocity_sigma)
+        self._linear_velocity_scale = float(linear_velocity_scale)
+        self._angular_velocity_scale = float(angular_velocity_scale)
+        self._pose_scale = float(pose_scale)
+        self._alive_scale = float(alive_scale)
+        self._action_cost_scale = float(action_cost_scale)
+        self._action_rate_cost_scale = float(action_rate_cost_scale)
         super().__init__(*args, **kwargs)
 
     def reset(self, rng):
@@ -136,19 +162,57 @@ class Go2Z1StandingEnv(Go2Z1Env):
         return state.replace(data=data, obs=obs, info=info)
 
     def step(self, state, action):
+        previous_action = state.info["last_action"]
         state = super().step(state, action)
-        reward = self._standing_reward(state.data, state.info["last_action"])
+        reward = self._standing_reward(
+            state.data,
+            state.info["last_action"],
+            previous_action,
+            state.done,
+        )
         return state.replace(reward=reward)
 
-    def _standing_reward(self, data, last_action) -> jax.Array:
+    def _standing_reward(
+        self,
+        data,
+        last_action,
+        previous_action,
+        done,
+    ) -> jax.Array:
         w, x, y, z = data.qpos[3], data.qpos[4], data.qpos[5], data.qpos[6]
         rz = w * w - x * x - y * y + z * z
         upright = (
             jnp.clip(rz, 0.0, 1.0) if self._sanitize_reward else jnp.maximum(0.0, rz)
         )
         dz = data.qpos[2] - self._home_qpos[2]
-        height = jnp.maximum(0.0, 1.0 - (dz * dz) / 0.02)
-        reward = upright + height + 0.1 - 0.001 * jnp.sum(last_action * last_action)
+        height = 1.0 / (1.0 + (dz * dz) / self._height_sigma)
+        linear_velocity = 1.0 / (
+            1.0 + jnp.sum(data.qvel[:3] * data.qvel[:3]) / self._linear_velocity_sigma
+        )
+        angular_velocity = 1.0 / (
+            1.0
+            + jnp.sum(data.qvel[3:6] * data.qvel[3:6]) / self._angular_velocity_sigma
+        )
+        leg_position_error = data.qpos[7:19] - self._home_qpos[7:19]
+        leg_pose_weights = jnp.asarray([1.0, 1.0, 0.1] * 4)
+        pose = jnp.exp(
+            -jnp.sum(leg_position_error * leg_position_error * leg_pose_weights)
+        )
+        action_cost = jnp.sum(last_action * last_action)
+        action_rate_cost = jnp.sum(
+            (last_action - previous_action) * (last_action - previous_action)
+        )
+        reward = (
+            upright
+            + height
+            + self._linear_velocity_scale * linear_velocity
+            + self._angular_velocity_scale * angular_velocity
+            + self._pose_scale * pose
+            + self._alive_scale
+            - self._action_cost_scale * action_cost
+            - self._action_rate_cost_scale * action_rate_cost
+            - self._termination_cost * done
+        )
         if self._sanitize_reward:
             # AutoReset replaces terminal data and observations, but preserves
             # terminal reward.  Do not leak a contact-divergence NaN into PPO.
@@ -156,11 +220,20 @@ class Go2Z1StandingEnv(Go2Z1Env):
         return reward
 
 
-def _sequential_eval(env, action_fns, n_envs, n_steps, reset_key):
+def _sequential_eval(
+    env,
+    action_fns,
+    n_envs,
+    n_steps,
+    reset_key,
+    repeat_count=1,
+    height_tolerance=0.2,
+):
     """Evaluate named policies with one reusable sequential step kernel.
 
     No fused lax.scan: one compiled vmap(env.step) kernel is reused per step,
-    which is the gfx1100-stable path. Returns mean per-step rewards.
+    which is the gfx1100-stable path. Every policy and repeat starts from the
+    exact same immutable reset state.
     """
     from mujoco_playground import wrapper
 
@@ -168,16 +241,71 @@ def _sequential_eval(env, action_fns, n_envs, n_steps, reset_key):
     reset_fn = jax.jit(wrapped.reset)
     step_fn = jax.jit(wrapped.step)
     reset_keys = jax.random.split(reset_key, n_envs)
+    initial_state = reset_fn(reset_keys)
+    reset_digest = hashlib.sha256()
+    for value in (
+        initial_state.data.qpos,
+        initial_state.data.qvel,
+        initial_state.obs,
+    ):
+        reset_digest.update(jax.device_get(value).tobytes())
+
     results = {}
     for name, act_fn in action_fns.items():
-        state = reset_fn(reset_keys)
-        total = jnp.zeros(())
-        for _ in range(n_steps):
-            actions = act_fn(state.obs)
-            state = step_fn(state, actions)
-            total = total + jnp.mean(state.reward)
-        results[name] = float(total / n_steps)
-    return results
+        repeats = []
+        for _ in range(repeat_count):
+            state = initial_state
+            reward_total = jnp.zeros(())
+            tilt_total = jnp.zeros(())
+            tilt_finite_count = jnp.zeros((), dtype=jnp.int32)
+            height_error_total = jnp.zeros(())
+            height_finite_count = jnp.zeros((), dtype=jnp.int32)
+            height_outlier_count = jnp.zeros((), dtype=jnp.int32)
+            action_square_total = jnp.zeros(())
+            done_count = jnp.zeros((), dtype=jnp.int32)
+            for _ in range(n_steps):
+                actions = act_fn(state.obs)
+                state = step_fn(state, actions)
+                reward_total += jnp.mean(state.reward)
+                tilt = state.metrics["tilt_deg"]
+                finite_tilt = jnp.isfinite(tilt)
+                tilt_total += jnp.sum(jnp.where(finite_tilt, tilt, 0.0))
+                tilt_finite_count += jnp.sum(finite_tilt.astype(jnp.int32))
+                height_error = jnp.abs(state.metrics["base_height"] - env._home_qpos[2])
+                finite_height = jnp.isfinite(height_error)
+                height_outlier = finite_height & (height_error > height_tolerance)
+                height_error_total += jnp.sum(
+                    jnp.where(finite_height, jnp.minimum(height_error, 1.0), 0.0)
+                )
+                height_finite_count += jnp.sum(finite_height.astype(jnp.int32))
+                height_outlier_count += jnp.sum(height_outlier.astype(jnp.int32))
+                action_square_total += jnp.mean(actions * actions)
+                done_count += jnp.sum(state.done.astype(jnp.int32))
+            repeats.append(
+                {
+                    "mean_reward": float(reward_total / n_steps),
+                    "mean_tilt_deg": float(
+                        tilt_total / jnp.maximum(tilt_finite_count, 1)
+                    ),
+                    "mean_clipped_abs_height_error": float(
+                        height_error_total / jnp.maximum(height_finite_count, 1)
+                    ),
+                    "action_rms": float(jnp.sqrt(action_square_total / n_steps)),
+                    "done_count": int(done_count),
+                    "nonfinite_tilt_count": int(n_envs * n_steps - tilt_finite_count),
+                    "nonfinite_height_count": int(
+                        n_envs * n_steps - height_finite_count
+                    ),
+                    "height_outlier_count": int(height_outlier_count),
+                }
+            )
+
+        results[name] = {}
+        for metric in repeats[0]:
+            values = [repeat[metric] for repeat in repeats]
+            results[name][metric] = sum(values) / repeat_count
+            results[name][f"{metric}_repeat_range"] = max(values) - min(values)
+    return reset_digest.hexdigest(), results
 
 
 def _random_rollout_preflight(env, n_envs, n_steps, reset_key):
@@ -233,6 +361,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config")
     parser.add_argument("--num-timesteps", type=int)
+    parser.add_argument("--episode-length", type=int)
     parser.add_argument(
         "--training-steps-per-host-call",
         type=int,
@@ -241,6 +370,8 @@ def main() -> int:
     parser.add_argument("--learning-rate", type=float)
     parser.add_argument("--max-grad-norm", type=float)
     parser.add_argument("--foot-condim", type=int, choices=(1, 3, 4, 6))
+    parser.add_argument("--control-timestep", type=float)
+    parser.add_argument("--termination-cost", type=float)
     parser.add_argument("--unsafe-reward", action="store_true")
     parser.add_argument("--unbounded-observations", action="store_true")
     parser.add_argument("--no-reset-randomization", action="store_true")
@@ -251,9 +382,15 @@ def main() -> int:
     parser.add_argument("--desired-kl", type=float)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--preflight-steps", type=int, default=0)
+    parser.add_argument("--eval-repeats", type=int)
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument("--params-in")
     parser.add_argument("--params-out")
+    parser.add_argument(
+        "--eval-only",
+        action="store_true",
+        help="Skip PPO updates and evaluate --params-in with the configured suite.",
+    )
     parser.add_argument(
         "--training-state-dir",
         help="Root directory for full learner TrainingState checkpoints.",
@@ -267,13 +404,42 @@ def main() -> int:
         "--resume-training-state",
         help="Step checkpoint directory to restore before training.",
     )
+    parser.add_argument(
+        "--policy-snapshot-dir",
+        help="Directory for compact inference-parameter snapshots.",
+    )
+    parser.add_argument(
+        "--policy-snapshot-interval",
+        type=int,
+        help="Save compact inference parameters every N environment steps.",
+    )
     parser.add_argument("--skip-eval", action="store_true")
     parser.set_defaults(**_config_defaults(config))
     args = parser.parse_args()
     if args.params_in and args.resume_training_state:
         parser.error("--params-in and --resume-training-state are mutually exclusive")
+    if args.eval_only and not args.params_in:
+        parser.error("--eval-only requires --params-in")
+    if args.eval_only and (
+        args.skip_eval
+        or args.training_state_dir
+        or args.resume_training_state
+        or args.policy_snapshot_dir
+    ):
+        parser.error(
+            "--eval-only cannot be combined with checkpoint, snapshot, "
+            "or --skip-eval options"
+        )
     if args.training_state_dir and args.training_state_interval <= 0:
         parser.error("--training-state-dir requires a positive checkpoint interval")
+    if args.eval_repeats <= 0:
+        parser.error("--eval-repeats must be positive")
+    if args.episode_length <= 0:
+        parser.error("--episode-length must be positive")
+    if args.control_timestep <= 0.0:
+        parser.error("--control-timestep must be positive")
+    if args.policy_snapshot_dir and args.policy_snapshot_interval <= 0:
+        parser.error("--policy-snapshot-dir requires a positive snapshot interval")
 
     from amd_robo.platform import _compat
 
@@ -282,12 +448,33 @@ def main() -> int:
     from brax.training.agents.ppo import train as ppo
     from mujoco_playground import wrapper
 
+    reward_config = config.get("reward", {})
+    reward_profile = reward_config.get("profile", "smooth_height_velocity_pose_v1")
     env = Go2Z1StandingEnv(
+        ctrl_dt=args.control_timestep,
         foot_condim=args.foot_condim,
         sanitize_reward=not args.unsafe_reward,
         bound_observations=not args.unbounded_observations,
         randomize_reset=not args.no_reset_randomization,
+        termination_cost=args.termination_cost,
+        height_sigma=reward_config.get("height_sigma", 0.02),
+        linear_velocity_sigma=reward_config.get("linear_velocity_sigma", 0.25),
+        angular_velocity_sigma=reward_config.get("angular_velocity_sigma", 0.25),
+        linear_velocity_scale=reward_config.get("linear_velocity_scale", 1.0),
+        angular_velocity_scale=reward_config.get("angular_velocity_scale", 0.5),
+        pose_scale=reward_config.get("pose_scale", 0.5),
+        alive_scale=reward_config.get("alive_scale", 0.1),
+        action_cost_scale=reward_config.get("action_cost_scale", 0.001),
+        action_rate_cost_scale=reward_config.get("action_rate_cost_scale", 0.01),
     )
+    max_control_substeps = config.get("rocm_guardrails", {}).get(
+        "max_physics_substeps_per_control", env.n_substeps
+    )
+    if env.n_substeps > max_control_substeps:
+        raise ValueError(
+            f"physics substeps per control ({env.n_substeps}) exceed the ROCm "
+            f"guardrail ({max_control_substeps})"
+        )
     if args.preflight_steps:
         preflight = _random_rollout_preflight(
             env,
@@ -307,28 +494,40 @@ def main() -> int:
     batch_size = ppo_config.get("batch_size", 16)
     num_minibatches = ppo_config.get("num_minibatches", 4)
     unroll_length = ppo_config.get("unroll_length", 4)
-    episode_length = ppo_config.get("episode_length", 64)
+    episode_length = args.episode_length
     num_updates_per_batch = ppo_config.get("num_updates_per_batch", 2)
     entropy_cost = ppo_config.get("entropy_cost", 1e-3)
     discounting = ppo_config.get("discounting", 0.97)
     normalize_observations = ppo_config.get("normalize_observations", True)
-    num_timesteps = args.num_timesteps
+    num_timesteps = 0 if args.eval_only else args.num_timesteps
     env_steps_per_training_step = batch_size * unroll_length * num_minibatches
-    host_loop = plan_brax_host_loop(
-        num_timesteps=num_timesteps,
-        env_steps_per_training_step=env_steps_per_training_step,
-        max_training_steps_per_call=args.training_steps_per_host_call,
-    )
+    actual_timesteps = host_calls = training_scan = 0
+    brax_num_evals = 1
+    if not args.eval_only:
+        host_loop = plan_brax_host_loop(
+            num_timesteps=num_timesteps,
+            env_steps_per_training_step=env_steps_per_training_step,
+            max_training_steps_per_call=args.training_steps_per_host_call,
+        )
+        actual_timesteps = host_loop.actual_timesteps
+        host_calls = host_loop.host_calls
+        training_scan = host_loop.training_steps_per_call
+        brax_num_evals = host_loop.brax_num_evals
     max_grad_norm = args.max_grad_norm if args.max_grad_norm > 0.0 else None
     print(
         f"standing smoke: num_envs={num_envs} unroll={unroll_length} "
         f"batch={batch_size} "
-        f"mb={num_minibatches} num_timesteps={num_timesteps} "
-        f"actual_timesteps={host_loop.actual_timesteps} "
-        f"host_calls={host_loop.host_calls} "
-        f"training_scan={host_loop.training_steps_per_call} "
+        f"mb={num_minibatches} episode_length={episode_length} "
+        f"num_timesteps={num_timesteps} "
+        f"actual_timesteps={actual_timesteps} "
+        f"host_calls={host_calls} "
+        f"training_scan={training_scan} "
+        f"control_timestep={args.control_timestep} "
+        f"physics_substeps={env.n_substeps} "
         f"foot_condim={args.foot_condim or 6} learning_rate={args.learning_rate} "
         f"max_grad_norm={max_grad_norm} "
+        f"reward_profile={reward_profile} "
+        f"termination_cost={args.termination_cost} "
         f"safe_reward={not args.unsafe_reward} "
         f"bounded_obs={not args.unbounded_observations} "
         f"randomized_reset={not args.no_reset_randomization} "
@@ -337,6 +536,9 @@ def main() -> int:
         f"config={args.config or 'none'} "
         f"config_sha256={config_sha256 or 'none'} "
         f"matmul_precision={os.environ.get('JAX_DEFAULT_MATMUL_PRECISION', 'default')} "
+        f"policy_snapshot_interval="
+        f"{args.policy_snapshot_interval if args.policy_snapshot_dir else 0} "
+        f"eval_only={args.eval_only} eval_repeats={args.eval_repeats} "
         "run_evals=False",
         flush=True,
     )
@@ -360,6 +562,22 @@ def main() -> int:
     if args.params_in:
         print(f"PARAMS_LOADED path={args.params_in}", flush=True)
 
+    def policy_params_fn(step, unused_make_policy, snapshot_params):
+        del unused_make_policy
+        if (
+            not args.policy_snapshot_dir
+            or step <= 0
+            or step % args.policy_snapshot_interval
+        ):
+            return
+        snapshot_path = Path(args.policy_snapshot_dir) / f"step_{step:012d}.params"
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        brax_model.save_params(str(snapshot_path), snapshot_params)
+        print(
+            f"POLICY_SNAPSHOT_SAVED step={step} path={snapshot_path}",
+            flush=True,
+        )
+
     def training_session_fn(*unused):
         return None
 
@@ -377,7 +595,44 @@ def main() -> int:
         checkpoint_metadata = {
             "config": args.config,
             "config_sha256": config_sha256,
+            "num_timesteps": actual_timesteps,
+            "num_envs": num_envs,
+            "control_timestep": args.control_timestep,
+            "physics_substeps": env.n_substeps,
+            "episode_length": episode_length,
+            "unroll_length": unroll_length,
+            "batch_size": batch_size,
+            "num_minibatches": num_minibatches,
+            "num_updates_per_batch": num_updates_per_batch,
+            "learning_rate": args.learning_rate,
+            "learning_rate_schedule": args.learning_rate_schedule,
+            "desired_kl": args.desired_kl,
+            "max_grad_norm": max_grad_norm,
+            "entropy_cost": entropy_cost,
+            "discounting": discounting,
+            "normalize_observations": normalize_observations,
+            "termination_cost": args.termination_cost,
+            "reward_profile": reward_profile,
+            "reward_shaping": {
+                "height_sigma": env._height_sigma,
+                "linear_velocity_sigma": env._linear_velocity_sigma,
+                "angular_velocity_sigma": env._angular_velocity_sigma,
+                "linear_velocity_scale": env._linear_velocity_scale,
+                "angular_velocity_scale": env._angular_velocity_scale,
+                "pose_scale": env._pose_scale,
+                "alive_scale": env._alive_scale,
+                "action_cost_scale": env._action_cost_scale,
+                "action_rate_cost_scale": env._action_rate_cost_scale,
+            },
             "foot_condim": args.foot_condim or 6,
+            "safe_reward": not args.unsafe_reward,
+            "bounded_observations": not args.unbounded_observations,
+            "randomized_reset": not args.no_reset_randomization,
+            "host_calls": host_calls,
+            "training_scan": training_scan,
+            "policy_snapshot_interval": (
+                args.policy_snapshot_interval if args.policy_snapshot_dir else 0
+            ),
             "jax_default_matmul_precision": os.environ.get(
                 "JAX_DEFAULT_MATMUL_PRECISION", "default"
             ),
@@ -414,7 +669,8 @@ def main() -> int:
         }
 
     metrics = {}
-    print(f"TRAINING_START timesteps={num_timesteps}", flush=True)
+    event_prefix = "EVAL_ONLY" if args.eval_only else "TRAINING"
+    print(f"{event_prefix}_START timesteps={num_timesteps}", flush=True)
     make_policy, params, metrics = ppo.train(
         environment=env,
         num_timesteps=num_timesteps,
@@ -437,16 +693,17 @@ def main() -> int:
         normalize_observations=normalize_observations,
         # With run_evals=False, Brax uses these iterations as a Python host
         # loop and carries the full TrainingState between compiled epochs.
-        num_evals=host_loop.brax_num_evals,
+        num_evals=brax_num_evals,
         num_eval_envs=4,
         run_evals=False,
         progress_fn=progress,
+        policy_params_fn=policy_params_fn,
         seed=args.seed,
         restore_params=restore_params,
         wrap_env_fn=wrapper.wrap_for_brax_training,
         **training_state_kwargs,
     )
-    print("TRAINING_DONE", flush=True)
+    print(f"{event_prefix}_DONE", flush=True)
     for key in sorted(metrics):
         print(f"METRIC {key}: {metrics[key]}", flush=True)
     if args.params_out:
@@ -467,19 +724,36 @@ def main() -> int:
     eval_key = jax.random.PRNGKey(evaluation_config.get("seed", 777))
     n_eval_envs = evaluation_config.get("num_envs", 64)
     n_eval_steps = evaluation_config.get("num_steps", 50)
+    eval_repeats = args.eval_repeats
+    height_tolerance = evaluation_config.get("height_tolerance", 0.2)
     print("evaluating (sequential, no scan)...", flush=True)
-    eval_results = _sequential_eval(
+    eval_reset_sha256, eval_results = _sequential_eval(
         env,
         {"baseline": zero_act, "trained": trained_act},
         n_eval_envs,
         n_eval_steps,
         eval_key,
+        repeat_count=eval_repeats,
+        height_tolerance=height_tolerance,
     )
-    baseline = eval_results["baseline"]
-    trained = eval_results["trained"]
+    print(
+        f"EVAL_RESET sha256={eval_reset_sha256} "
+        f"seed={evaluation_config.get('seed', 777)} "
+        f"height_tolerance={height_tolerance}",
+        flush=True,
+    )
+    for policy_name, policy_metrics in eval_results.items():
+        print(
+            f"EVAL_POLICY policy={policy_name} "
+            + " ".join(f"{metric}={value}" for metric, value in policy_metrics.items()),
+            flush=True,
+        )
+    baseline = eval_results["baseline"]["mean_reward"]
+    trained = eval_results["trained"]["mean_reward"]
     print(
         f"EVAL mean standing reward over {n_eval_steps} steps "
-        f"({n_eval_envs} envs, same randomized initial states): "
+        f"({n_eval_envs} envs, {eval_repeats} repeats, "
+        "same randomized initial states): "
         f"baseline(zero)={baseline:.4f} trained={trained:.4f} "
         f"delta={trained - baseline:+.4f}",
         flush=True,

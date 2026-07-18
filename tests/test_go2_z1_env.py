@@ -2,16 +2,9 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SRC = REPO_ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
-
 import jax
 import jax.numpy as jnp
+import mujoco
 
 from amd_robo.envs.go2_z1 import FOOT_GEOM_NAMES, Go2Z1Env
 from amd_robo.envs.protocol import ProjectMjxEnv
@@ -23,6 +16,7 @@ def test_env_matches_contract() -> None:
     assert env.action_size == 19
     assert isinstance(env, ProjectMjxEnv)
     assert getattr(env.mjx_model.impl, "value", None) == "jax"
+    assert not jnp.allclose(env.mj_model.qpos0[7:], env.mj_model.key_qpos[0, 7:])
 
 
 def test_foot_condim_override() -> None:
@@ -31,9 +25,31 @@ def test_foot_condim_override() -> None:
         assert env.mj_model.geom(name).condim == 1
 
 
+def test_default_scene_has_supporting_ground() -> None:
+    env = Go2Z1Env()
+    floor_id = mujoco.mj_name2id(env.mj_model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+    assert floor_id >= 0
+    assert env.mj_model.geom_type[floor_id] == mujoco.mjtGeom.mjGEOM_PLANE
+
+    data = mujoco.MjData(env.mj_model)
+    data.qpos[:] = env.mj_model.key_qpos[0]
+    data.ctrl[:] = env.mj_model.key_ctrl[0]
+    mujoco.mj_forward(env.mj_model, data)
+    assert all(
+        floor_id in (contact.geom1, contact.geom2)
+        for contact in data.contact[: data.ncon]
+    )
+    for _ in range(500):
+        mujoco.mj_step(env.mj_model, data)
+
+    assert data.qpos[2] > 0.1
+    assert data.ncon > 0
+
+
 def test_reset_step_finite_single_env() -> None:
     env = Go2Z1Env()
     state = jax.jit(env.reset)(jax.random.PRNGKey(0))
+    assert jnp.allclose(state.data.qpos, env.mj_model.key_qpos[0])
     assert _tree_is_finite(state.data)
     nxt = jax.jit(env.step)(state, jnp.zeros(env.action_size))
     _block_tree(nxt)

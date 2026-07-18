@@ -27,7 +27,9 @@ Run after fetching menagerie::
 
     python scripts/build_go2_z1.py
 
-Outputs ``assets/menagerie/go2_z1/go2_z1.xml`` and prints a compile + DoF audit.
+Outputs the robot model at ``assets/menagerie/go2_z1/go2_z1.xml`` and a flat
+ground scene at ``assets/menagerie/go2_z1/scene_mjx.xml``, then prints compile,
+DoF, and ground-plane audits.
 """
 
 from __future__ import annotations
@@ -39,16 +41,26 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MENAGERIE = REPO_ROOT / "assets" / "menagerie"
 GO2_XML = MENAGERIE / "unitree_go2" / "go2_mjx.xml"
+GO2_SCENE_XML = MENAGERIE / "unitree_go2" / "scene_mjx.xml"
 Z1_XML = MENAGERIE / "unitree_z1" / "z1_gripper.xml"
 OUT_DIR = MENAGERIE / "go2_z1"
 OUT_XML = OUT_DIR / "go2_z1.xml"
+OUT_SCENE_XML = OUT_DIR / "scene_mjx.xml"
 
 # Actuator order must match src/amd_robo/contracts.py::ACTION_LAYOUT exactly.
 EXPECTED_LEG_ACTUATORS = (
-    "FL_hip", "FL_thigh", "FL_calf",
-    "FR_hip", "FR_thigh", "FR_calf",
-    "RL_hip", "RL_thigh", "RL_calf",
-    "RR_hip", "RR_thigh", "RR_calf",
+    "FL_hip",
+    "FL_thigh",
+    "FL_calf",
+    "FR_hip",
+    "FR_thigh",
+    "FR_calf",
+    "RL_hip",
+    "RL_thigh",
+    "RL_calf",
+    "RR_hip",
+    "RR_thigh",
+    "RR_calf",
 )
 EXPECTED_ARM_ACTUATORS = ("motor1", "motor2", "motor3", "motor4", "motor5", "motor6")
 EXPECTED_GRIPPER_ACTUATOR = ("motorGripper",)
@@ -74,7 +86,10 @@ Z1_CLASS_RENAME = {"visual": "z1_visual", "collision": "z1_collision"}
 # NotImplementedError. Drop collision on those mesh geoms; the gripper still
 # collides via its primitive box pads. Gripper mesh-precise collision only
 # matters for grasping, which is post-MVP.
-Z1_MESH_COLLISION_CLASSES = ("z1_gripper_stator_collision", "z1_gripper_mover_collision")
+Z1_MESH_COLLISION_CLASSES = (
+    "z1_gripper_stator_collision",
+    "z1_gripper_mover_collision",
+)
 
 
 def _parse(path: Path) -> ET.Element:
@@ -105,17 +120,29 @@ def _disable_z1_mesh_collision(root: ET.Element) -> None:
 def _z1_collision_to_capsule(root: ET.Element) -> None:
     """Convert the Z1 arm-link collision cylinders to capsules (MJX compat).
 
-    MJX has no cylinder-vs-{box,sphere,capsule} contact, while capsule size
-    ``[radius, half-length]`` matches cylinder size exactly, so the swap is a
-    close approximation. The gripper pad boxes set their own type and are
-    unaffected. Go2 passed G0 with box/capsule/sphere only, so all remaining
-    pair types after this swap are MJX-supported.
+    MJX has no cylinder-vs-{box,sphere,capsule} contact. MuJoCo cylinder size is
+    ``[radius, half-length]``, while a capsule adds hemispherical ends outside
+    its cylindrical half-length. Reusing the two numbers verbatim lengthens the
+    arm geoms and creates self-penetration at the home pose. Use a conservative
+    capsule whose outer half-length does not exceed the source cylinder. The
+    gripper pad boxes set their own type and are unaffected.
     """
     for d in root.iter("default"):
         if d.get("class") == "z1_collision":
             g = d.find("geom")
             if g is not None and g.get("type", "cylinder") == "cylinder":
                 g.set("type", "capsule")
+
+    for geom in root.iter("geom"):
+        if geom.get("class") != "z1_collision" or geom.get("type") is not None:
+            continue
+        size = geom.get("size")
+        if size is None:
+            raise SystemExit("Z1 cylinder collision geom is missing size")
+        radius, cylinder_half_length = map(float, size.split())
+        capsule_radius = min(radius, cylinder_half_length)
+        capsule_half_length = max(cylinder_half_length - capsule_radius, 1.0e-6)
+        geom.set("size", f"{capsule_radius:g} {capsule_half_length:g}")
 
 
 def _deepcopy(el: ET.Element) -> ET.Element:
@@ -231,7 +258,18 @@ def build() -> ET.Element:
     return merged
 
 
-def audit(xml_path: Path) -> None:
+def build_scene() -> ET.Element:
+    """Reuse the official Go2 MJX flat scene with the assembled robot."""
+    scene = _parse(GO2_SCENE_XML)
+    scene.set("model", "go2_z1 scene")
+    include = scene.find("include")
+    if include is None:
+        raise SystemExit(f"robot include missing in {GO2_SCENE_XML}")
+    include.set("file", OUT_XML.name)
+    return scene
+
+
+def audit(xml_path: Path, *, expect_floor: bool = False) -> None:
     """Compile with CPU MuJoCo and assert the 19-DoF contract."""
     try:
         import mujoco
@@ -245,7 +283,12 @@ def audit(xml_path: Path) -> None:
         raise
 
     def names(obj) -> list[str]:
-        return [mujoco.mj_id2name(model, obj, i) for i in range(model.nu if obj == mujoco.mjtObj.mjOBJ_ACTUATOR else model.njnt)]
+        return [
+            mujoco.mj_id2name(model, obj, i)
+            for i in range(
+                model.nu if obj == mujoco.mjtObj.mjOBJ_ACTUATOR else model.njnt
+            )
+        ]
 
     actuator_names = names(mujoco.mjtObj.mjOBJ_ACTUATOR)
     joint_names = names(mujoco.mjtObj.mjOBJ_JOINT)
@@ -258,18 +301,45 @@ def audit(xml_path: Path) -> None:
         f"actuator order mismatch:\n got {actuator_names}\n exp {EXPECTED_ACTUATORS}"
     )
     assert joint_names[-7:] == [
-        "joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "jointGripper"
+        "joint1",
+        "joint2",
+        "joint3",
+        "joint4",
+        "joint5",
+        "joint6",
+        "jointGripper",
     ], f"arm joints not last in qpos: {joint_names[-7:]}"
     assert model.key_qpos[0].shape[0] == model.nq, (
         f"home qpos len {model.key_qpos[0].shape[0]} != nq {model.nq}"
     )
+    floor_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+    if expect_floor:
+        assert floor_id >= 0, "flat scene is missing the floor geom"
+        assert model.geom_type[floor_id] == mujoco.mjtGeom.mjGEOM_PLANE, (
+            "floor geom is not a plane"
+        )
+        data = mujoco.MjData(model)
+        data.qpos[:] = model.key_qpos[0]
+        data.ctrl[:] = model.key_ctrl[0]
+        mujoco.mj_forward(model, data)
+        non_floor_contacts = [
+            (contact.geom1, contact.geom2)
+            for contact in data.contact[: data.ncon]
+            if floor_id not in (contact.geom1, contact.geom2)
+        ]
+        assert not non_floor_contacts, (
+            f"home pose has non-floor contacts: {non_floor_contacts}"
+        )
     print("COMPILE + 19-DoF CONTRACT AUDIT PASSED")
 
 
 def main() -> int:
-    if not GO2_XML.exists() or not Z1_XML.exists():
+    missing_sources = [
+        path for path in (GO2_XML, GO2_SCENE_XML, Z1_XML) if not path.exists()
+    ]
+    if missing_sources:
         print(
-            f"menagerie source missing: {GO2_XML} / {Z1_XML}\n"
+            f"menagerie source missing: {missing_sources}\n"
             f"run scripts/fetch_menagerie.sh first",
             file=sys.stderr,
         )
@@ -278,8 +348,13 @@ def main() -> int:
     merged = build()
     ET.indent(merged, space="  ")
     ET.ElementTree(merged).write(OUT_XML, encoding="utf-8", xml_declaration=True)
+    scene = build_scene()
+    ET.indent(scene, space="  ")
+    ET.ElementTree(scene).write(OUT_SCENE_XML, encoding="utf-8", xml_declaration=True)
     print(f"wrote {OUT_XML.relative_to(REPO_ROOT)}")
+    print(f"wrote {OUT_SCENE_XML.relative_to(REPO_ROOT)}")
     audit(OUT_XML)
+    audit(OUT_SCENE_XML, expect_floor=True)
     return 0
 
 
