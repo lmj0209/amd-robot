@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import inspect
+import json
 import os
 import sys
 from pathlib import Path
@@ -164,6 +165,14 @@ def main() -> int:
     parser.add_argument("--skip-eval", action="store_true")
     parser.add_argument("--training-state-dir")
     parser.add_argument("--resume-training-state")
+    parser.add_argument(
+        "--migrate-missing-nonfinite-state",
+        action="store_true",
+        help=(
+            "Migrate a pre-guard full-session checkpoint whose only missing "
+            "PyTree leaf is the derived nonfinite_state metric."
+        ),
+    )
     args = parser.parse_args()
 
     config, config_sha256 = _load_config(args.config)
@@ -212,6 +221,10 @@ def main() -> int:
         num_timesteps = 0
     if args.params_in and args.resume_training_state:
         parser.error("--params-in and --resume-training-state are mutually exclusive")
+    if args.migrate_missing_nonfinite_state and not args.resume_training_state:
+        parser.error(
+            "--migrate-missing-nonfinite-state requires --resume-training-state"
+        )
     if args.eval_only and (
         args.skip_eval or args.training_state_dir or args.resume_training_state
     ):
@@ -351,10 +364,84 @@ def main() -> int:
     if args.resume_training_state:
 
         def restore_training_session_fn(template):
-            restored = load_training_session_checkpoint(
-                args.resume_training_state,
-                training_session_template=template,
-            )
+            if args.migrate_missing_nonfinite_state:
+                training_state, env_state, local_key, key_envs = template
+                if "nonfinite_state" not in env_state.metrics:
+                    raise RuntimeError(
+                        "current training-session template has no "
+                        "nonfinite_state metric to migrate"
+                    )
+                nonfinite_state = env_state.metrics["nonfinite_state"]
+                legacy_metrics = {
+                    name: value
+                    for name, value in env_state.metrics.items()
+                    if name != "nonfinite_state"
+                }
+                legacy_template = (
+                    training_state,
+                    env_state.replace(metrics=legacy_metrics),
+                    local_key,
+                    key_envs,
+                )
+                manifest = json.loads(
+                    (
+                        Path(args.resume_training_state)
+                        / "manifest.json"
+                    ).read_text()
+                )
+                current_leaf_count = len(jax.tree_util.tree_leaves(template))
+                legacy_leaf_count = len(jax.tree_util.tree_leaves(legacy_template))
+                if (
+                    current_leaf_count != legacy_leaf_count + 1
+                    or manifest.get("leaf_count") != legacy_leaf_count
+                ):
+                    raise RuntimeError(
+                        "refusing training-session migration: expected exactly "
+                        "one missing nonfinite_state leaf, "
+                        f"manifest={manifest.get('leaf_count')} "
+                        f"legacy={legacy_leaf_count} current={current_leaf_count}"
+                    )
+                restored_legacy = load_training_session_checkpoint(
+                    args.resume_training_state,
+                    training_session_template=legacy_template,
+                )
+                (
+                    restored_training_state,
+                    restored_env_state,
+                    restored_local_key,
+                    restored_key_envs,
+                ) = restored_legacy
+                restored = (
+                    restored_training_state,
+                    restored_env_state.replace(
+                        metrics={
+                            **restored_env_state.metrics,
+                            "nonfinite_state": nonfinite_state,
+                        }
+                    ),
+                    restored_local_key,
+                    restored_key_envs,
+                )
+                if (
+                    jax.tree_util.tree_structure(restored)
+                    != jax.tree_util.tree_structure(template)
+                ):
+                    raise RuntimeError(
+                        "migrated training-session PyTree does not match "
+                        "the current template"
+                    )
+                print(
+                    "TRAINING_SESSION_MIGRATED "
+                    "added_metric=nonfinite_state "
+                    f"legacy_leaves={legacy_leaf_count} "
+                    f"current_leaves={current_leaf_count}",
+                    flush=True,
+                )
+            else:
+                restored = load_training_session_checkpoint(
+                    args.resume_training_state,
+                    training_session_template=template,
+                )
             print(
                 f"TRAINING_SESSION_LOADED path={args.resume_training_state}",
                 flush=True,
