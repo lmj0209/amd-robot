@@ -1,0 +1,48 @@
+schema_version: 1
+status: standing_qualification
+algorithm: brax_ppo
+seed: 0
+
+environment:
+  foot_condim: 6
+  safe_reward: true
+  bounded_observations: true
+  randomized_reset: true
+
+ppo:
+  num_timesteps: 5120
+  num_envs: 64
+  episode_length: 64
+  unroll_length: 4
+  batch_size: 16
+  num_minibatches: 4
+  num_updates_per_batch: 2
+  learning_rate: 0.0003
+  learning_rate_schedule: ADAPTIVE_KL
+  desired_kl: 0.01
+  max_grad_norm: 1.0
+  entropy_cost: 0.001
+  discounting: 0.97
+  normalize_observations: true
+
+rocm_guardrails:
+  max_training_steps_per_host_call: 2
+  brax_run_evals: false
+
+manual_evaluation:
+  enabled: true
+  seed: 777
+  num_envs: 64
+  num_steps: 50
+  implementation: sequential_python_loop
+
+checkpoint:
+  scope: full_training_session
+  interval_steps: 5120
+  includes_rollout_state: true
+
+precision:
+  status: pending_multi_seed_ab
+  candidates:
+    - default
+    - highest

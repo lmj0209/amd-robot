@@ -35,3 +35,21 @@ def test_smoke_config_is_fail_closed() -> None:
         "require_ppo_update": True,
         "require_checkpoint_roundtrip": True,
     }
+
+
+def test_standing_config_preserves_rocm_training_guardrails() -> None:
+    config = yaml.safe_load((REPO_ROOT / "configs" / "standing.yaml").read_text())
+
+    assert config["algorithm"] == "brax_ppo"
+    assert config["environment"]["foot_condim"] == 6
+    assert config["rocm_guardrails"] == {
+        "max_training_steps_per_host_call": 2,
+        "brax_run_evals": False,
+    }
+    assert config["manual_evaluation"]["implementation"] == ("sequential_python_loop")
+    assert config["checkpoint"] == {
+        "scope": "full_training_session",
+        "interval_steps": 5120,
+        "includes_rollout_state": True,
+    }
+    assert config["precision"]["status"] == "pending_multi_seed_ab"

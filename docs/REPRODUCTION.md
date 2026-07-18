@@ -54,3 +54,37 @@
 
 The exact install, smoke, training, evaluation, and benchmark commands are added
 only after they run successfully from a clean RGC environment.
+
+## Standing qualification and exact resume
+
+The gfx1100-safe standing run consumes the committed configuration, bounds every
+compiled Brax training scan to two steps, and performs evaluation with a
+sequential Python loop:
+
+```bash
+export HSA_OVERRIDE_GFX_VERSION=11.0.0
+export LLVM_PATH=/opt/rocm/llvm
+export HIP_DEVICE_LIB_PATH=/opt/rocm-7.2.1/lib/llvm/lib/clang/22/lib/amdgcn/bitcode
+export XLA_FLAGS="--xla_gpu_enable_command_buffer="
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+
+/workspace/.venv/bin/python scripts/standing_learn_smoke.py \
+  --config configs/standing.yaml \
+  --training-state-dir /workspace/checkpoints/standing
+```
+
+Resume by pointing at one immutable step directory.  `--num-timesteps` is the
+number of additional environment steps in the resumed process:
+
+```bash
+/workspace/.venv/bin/python scripts/standing_learn_smoke.py \
+  --config configs/standing.yaml \
+  --num-timesteps 5120 \
+  --resume-training-state \
+    /workspace/checkpoints/standing/step_000000005120 \
+  --training-state-dir /workspace/checkpoints/standing-resumed
+```
+
+These checkpoints contain the complete Brax learner state, MJX rollout state,
+and learner/environment PRNG keys.  Restoring learner parameters and optimizer
+state without rollout and PRNG state is not a supported resume mode.

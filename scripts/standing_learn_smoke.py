@@ -24,13 +24,18 @@ Run on RGC::
 The smoke maps Brax's ``num_evals`` iterations to a host loop while disabling
 evaluation. The complete Brax ``TrainingState`` remains live across calls, and
 each compiled ``training_epoch`` scan is bounded by
-``--training-steps-per-host-call``. ``--params-in``/``--params-out`` still only
-save inference parameters and are not resumable optimizer checkpoints.
+``--training-steps-per-host-call``. ``--params-in``/``--params-out`` only save
+inference parameters. Use ``--training-state-dir`` and
+``--resume-training-state`` for exact training-session checkpoints that include
+the optimizer, environment rollout state, and learner PRNG keys.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import inspect
+import os
 import sys
 from pathlib import Path
 
@@ -43,6 +48,50 @@ from mujoco import mjx  # noqa: E402
 
 from amd_robo.envs.go2_z1 import Go2Z1Env  # noqa: E402
 from amd_robo.training.host_loop import plan_brax_host_loop  # noqa: E402
+from amd_robo.training.learner_checkpoint import (  # noqa: E402
+    load_training_session_checkpoint,
+    make_training_session_checkpoint_callback,
+)
+
+
+def _load_config(path: str | None) -> tuple[dict, str | None]:
+    if path is None:
+        return {}, None
+    import yaml
+
+    config_path = Path(path)
+    config_bytes = config_path.read_bytes()
+    config = yaml.safe_load(config_bytes)
+    if not isinstance(config, dict) or config.get("schema_version") != 1:
+        raise ValueError("standing config must be a schema_version=1 mapping")
+    if config.get("algorithm") != "brax_ppo":
+        raise ValueError("standing config algorithm must be brax_ppo")
+    return config, hashlib.sha256(config_bytes).hexdigest()
+
+
+def _config_defaults(config: dict) -> dict:
+    environment = config.get("environment", {})
+    ppo = config.get("ppo", {})
+    guardrails = config.get("rocm_guardrails", {})
+    evaluation = config.get("manual_evaluation", {})
+    checkpoint = config.get("checkpoint", {})
+    return {
+        "num_timesteps": ppo.get("num_timesteps", 512),
+        "training_steps_per_host_call": guardrails.get(
+            "max_training_steps_per_host_call", 2
+        ),
+        "learning_rate": ppo.get("learning_rate", 3e-4),
+        "max_grad_norm": ppo.get("max_grad_norm", 0.0),
+        "foot_condim": environment.get("foot_condim"),
+        "unsafe_reward": not environment.get("safe_reward", True),
+        "unbounded_observations": not environment.get("bounded_observations", True),
+        "no_reset_randomization": not environment.get("randomized_reset", True),
+        "learning_rate_schedule": ppo.get("learning_rate_schedule", "NONE"),
+        "desired_kl": ppo.get("desired_kl", 0.01),
+        "seed": config.get("seed", 0),
+        "skip_eval": not evaluation.get("enabled", True),
+        "training_state_interval": checkpoint.get("interval_steps", 0),
+    }
 
 
 class Go2Z1StandingEnv(Go2Z1Env):
@@ -176,16 +225,21 @@ def _random_rollout_preflight(env, n_envs, n_steps, reset_key):
 
 
 def main() -> int:
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config")
+    config_args, _ = config_parser.parse_known_args()
+    config, config_sha256 = _load_config(config_args.config)
+
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--num-timesteps", type=int, default=512)
+    parser.add_argument("--config")
+    parser.add_argument("--num-timesteps", type=int)
     parser.add_argument(
         "--training-steps-per-host-call",
         type=int,
-        default=2,
         help="Maximum Brax training steps in each compiled host-loop call.",
     )
-    parser.add_argument("--learning-rate", type=float, default=3e-4)
-    parser.add_argument("--max-grad-norm", type=float, default=0.0)
+    parser.add_argument("--learning-rate", type=float)
+    parser.add_argument("--max-grad-norm", type=float)
     parser.add_argument("--foot-condim", type=int, choices=(1, 3, 4, 6))
     parser.add_argument("--unsafe-reward", action="store_true")
     parser.add_argument("--unbounded-observations", action="store_true")
@@ -193,15 +247,33 @@ def main() -> int:
     parser.add_argument(
         "--learning-rate-schedule",
         choices=("ADAPTIVE_KL", "NONE"),
-        default="NONE",
     )
-    parser.add_argument("--desired-kl", type=float, default=0.01)
+    parser.add_argument("--desired-kl", type=float)
+    parser.add_argument("--seed", type=int)
     parser.add_argument("--preflight-steps", type=int, default=0)
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument("--params-in")
     parser.add_argument("--params-out")
+    parser.add_argument(
+        "--training-state-dir",
+        help="Root directory for full learner TrainingState checkpoints.",
+    )
+    parser.add_argument(
+        "--training-state-interval",
+        type=int,
+        help="Save full learner state every N cumulative environment steps.",
+    )
+    parser.add_argument(
+        "--resume-training-state",
+        help="Step checkpoint directory to restore before training.",
+    )
     parser.add_argument("--skip-eval", action="store_true")
+    parser.set_defaults(**_config_defaults(config))
     args = parser.parse_args()
+    if args.params_in and args.resume_training_state:
+        parser.error("--params-in and --resume-training-state are mutually exclusive")
+    if args.training_state_dir and args.training_state_interval <= 0:
+        parser.error("--training-state-dir requires a positive checkpoint interval")
 
     from amd_robo.platform import _compat
 
@@ -229,8 +301,17 @@ def main() -> int:
                 or preflight["nonfinite_observations"] > 0
             )
 
-    num_envs, batch_size, num_minibatches = 64, 16, 4
-    unroll_length = 4
+    ppo_config = config.get("ppo", {})
+    evaluation_config = config.get("manual_evaluation", {})
+    num_envs = ppo_config.get("num_envs", 64)
+    batch_size = ppo_config.get("batch_size", 16)
+    num_minibatches = ppo_config.get("num_minibatches", 4)
+    unroll_length = ppo_config.get("unroll_length", 4)
+    episode_length = ppo_config.get("episode_length", 64)
+    num_updates_per_batch = ppo_config.get("num_updates_per_batch", 2)
+    entropy_cost = ppo_config.get("entropy_cost", 1e-3)
+    discounting = ppo_config.get("discounting", 0.97)
+    normalize_observations = ppo_config.get("normalize_observations", True)
     num_timesteps = args.num_timesteps
     env_steps_per_training_step = batch_size * unroll_length * num_minibatches
     host_loop = plan_brax_host_loop(
@@ -252,6 +333,10 @@ def main() -> int:
         f"bounded_obs={not args.unbounded_observations} "
         f"randomized_reset={not args.no_reset_randomization} "
         f"lr_schedule={args.learning_rate_schedule} desired_kl={args.desired_kl} "
+        f"seed={args.seed} "
+        f"config={args.config or 'none'} "
+        f"config_sha256={config_sha256 or 'none'} "
+        f"matmul_precision={os.environ.get('JAX_DEFAULT_MATMUL_PRECISION', 'default')} "
         "run_evals=False",
         flush=True,
     )
@@ -274,6 +359,60 @@ def main() -> int:
     restore_params = brax_model.load_params(args.params_in) if args.params_in else None
     if args.params_in:
         print(f"PARAMS_LOADED path={args.params_in}", flush=True)
+
+    def training_session_fn(*unused):
+        return None
+
+    restore_training_session_fn = None
+    supports_training_session = (
+        "training_session_fn" in inspect.signature(ppo.train).parameters
+    )
+    if (
+        args.training_state_dir or args.resume_training_state
+    ) and not supports_training_session:
+        raise RuntimeError(
+            "Brax training-session API patch is missing; rerun scripts/rgc_setup.sh"
+        )
+    if args.training_state_dir:
+        checkpoint_metadata = {
+            "config": args.config,
+            "config_sha256": config_sha256,
+            "foot_condim": args.foot_condim or 6,
+            "jax_default_matmul_precision": os.environ.get(
+                "JAX_DEFAULT_MATMUL_PRECISION", "default"
+            ),
+            "seed": args.seed,
+        }
+
+        def announce_checkpoint(message):
+            print(message, flush=True)
+
+        training_session_fn = make_training_session_checkpoint_callback(
+            args.training_state_dir,
+            interval_steps=args.training_state_interval,
+            metadata=checkpoint_metadata,
+            announce=announce_checkpoint,
+        )
+    if args.resume_training_state:
+
+        def restore_training_session_fn(template):
+            restored = load_training_session_checkpoint(
+                args.resume_training_state,
+                training_session_template=template,
+            )
+            print(
+                f"TRAINING_SESSION_LOADED path={args.resume_training_state}",
+                flush=True,
+            )
+            return restored
+
+    training_state_kwargs = {}
+    if supports_training_session:
+        training_state_kwargs = {
+            "training_session_fn": training_session_fn,
+            "restore_training_session_fn": restore_training_session_fn,
+        }
+
     metrics = {}
     print(f"TRAINING_START timesteps={num_timesteps}", flush=True)
     make_policy, params, metrics = ppo.train(
@@ -281,30 +420,31 @@ def main() -> int:
         num_timesteps=num_timesteps,
         max_devices_per_host=1,
         num_envs=num_envs,
-        episode_length=64,
+        episode_length=episode_length,
         action_repeat=1,
         learning_rate=args.learning_rate,
         learning_rate_schedule=args.learning_rate_schedule,
         learning_rate_schedule_min_lr=1e-5,
         learning_rate_schedule_max_lr=args.learning_rate,
         desired_kl=args.desired_kl,
-        entropy_cost=1e-3,
-        discounting=0.97,
+        entropy_cost=entropy_cost,
+        discounting=discounting,
         unroll_length=unroll_length,
         batch_size=batch_size,
         num_minibatches=num_minibatches,
-        num_updates_per_batch=2,
+        num_updates_per_batch=num_updates_per_batch,
         max_grad_norm=max_grad_norm,
-        normalize_observations=True,
+        normalize_observations=normalize_observations,
         # With run_evals=False, Brax uses these iterations as a Python host
         # loop and carries the full TrainingState between compiled epochs.
         num_evals=host_loop.brax_num_evals,
         num_eval_envs=4,
         run_evals=False,
         progress_fn=progress,
-        seed=0,
+        seed=args.seed,
         restore_params=restore_params,
         wrap_env_fn=wrapper.wrap_for_brax_training,
+        **training_state_kwargs,
     )
     print("TRAINING_DONE", flush=True)
     for key in sorted(metrics):
@@ -324,8 +464,9 @@ def main() -> int:
     def zero_act(obs):
         return jnp.zeros((obs.shape[0], env.action_size))
 
-    eval_key = jax.random.PRNGKey(777)
-    n_eval_envs, n_eval_steps = 64, 50
+    eval_key = jax.random.PRNGKey(evaluation_config.get("seed", 777))
+    n_eval_envs = evaluation_config.get("num_envs", 64)
+    n_eval_steps = evaluation_config.get("num_steps", 50)
     print("evaluating (sequential, no scan)...", flush=True)
     eval_results = _sequential_eval(
         env,

@@ -13,21 +13,33 @@ FROM amd-oneclick-base:rocm7.2.1-py3.12-v20260416
 # gfx1100 / RDNA3 override (needed whenever JAX/HIP runs) + ROCm libs on path
 ENV HSA_OVERRIDE_GFX_VERSION=11.0.0
 ENV LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}
+ENV LLVM_PATH=/opt/rocm/llvm
+ENV HIP_DEVICE_LIB_PATH=/opt/rocm-7.2.1/lib/llvm/lib/clang/22/lib/amdgcn/bitcode
+ENV XLA_FLAGS="--xla_gpu_enable_command_buffer="
+ENV XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 WORKDIR /workspace/amd-robo
 
 # System Python on this base is externally-managed -> use a venv
 RUN python -m venv /opt/venv \
  && /opt/venv/bin/pip install --upgrade pip \
- && /opt/venv/bin/pip install -U "jax[rocm7-local]"
+ && /opt/venv/bin/pip install -U "jax[rocm7-local]" \
+ && /opt/venv/bin/pip install "mujoco==3.10.0" "brax==0.14.2"
 
-# TODO(Phase 0): append the verified installs here in the same order as
-# scripts/rgc_setup.sh -- mujoco, brax, mujoco-playground, then
-# `pip install -e . --no-deps`. Do not add a line until it is verified on RGC.
+COPY patches/brax-0.14.2-training-state.patch /tmp/
+RUN BRAX_SITE_PACKAGES="$( \
+      /opt/venv/bin/python -c \
+      'import pathlib, brax; print(pathlib.Path(brax.__file__).resolve().parents[1])' \
+    )" \
+ && patch --directory "$BRAX_SITE_PACKAGES" --strip 0 \
+      < /tmp/brax-0.14.2-training-state.patch \
+ && /opt/venv/bin/pip install \
+      git+https://github.com/google-deepmind/mujoco_playground.git
 
 ENV PATH=/opt/venv/bin:${PATH}
 
 COPY . .
+RUN /opt/venv/bin/pip install -e . --no-deps
 
 # Default: fail-closed Gate G0 smoke test
 CMD ["python", "scripts/smoke_test.py"]

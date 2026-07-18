@@ -6,6 +6,8 @@ and RGC system fingerprint.
 
 - `env.yaml`: stable environment and interface contract.
 - `train.yaml`: PPO defaults and curriculum stages.
+- `standing.yaml`: measured standing-qualification PPO inputs and ROCm
+  guardrails; precision remains an explicit multi-seed A/B decision.
 - `smoke.yaml`: Gate G0 diagnostic sizes.
 
 Measured values replace `TODO` only after verification on RGC.

@@ -33,7 +33,23 @@ export HSA_OVERRIDE_GFX_VERSION=11.0.0
 # expect: [RocmDevice(id=0)] / gpu
 
 # --- 5. MuJoCo + Brax (verified: mujoco 3.10.0, brax 0.14.2) ---
-.venv/bin/pip install mujoco brax
+# Brax is pinned because the source-level TrainingState API patch below is
+# intentionally reviewed against this exact release.
+.venv/bin/pip install "mujoco==3.10.0" "brax==0.14.2"
+
+# Brax 0.14.2 only exposes inference-parameter checkpoints.  This small,
+# upstream-compatible API patch exposes/restores the existing learner
+# TrainingState, rollout state, and PRNG keys without changing PPO math.  It is
+# required for exact training-session continuity across RGC processes.
+BRAX_SITE_PACKAGES="$(
+  .venv/bin/python -c \
+    'import pathlib, brax; print(pathlib.Path(brax.__file__).resolve().parents[1])'
+)"
+BRAX_TRAIN="$BRAX_SITE_PACKAGES/brax/training/agents/ppo/train.py"
+if ! grep -q "restore_training_session_fn" "$BRAX_TRAIN"; then
+  patch --directory "$BRAX_SITE_PACKAGES" --strip 0 \
+    < patches/brax-0.14.2-training-state.patch
+fi
 
 # --- 6. MJX-on-GPU check (Gate G0 sim check) ---
 .venv/bin/python - <<'PY'
