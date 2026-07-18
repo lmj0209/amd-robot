@@ -12,6 +12,9 @@ and RGC system fingerprint.
 - `locomotion.yaml`: current Phase-2 forward-velocity curriculum. The arm and
   gripper remain masked at their home controls while the policy keeps the
   frozen 19-dimensional action interface.
+- `locomotion_stage1_low_speed.yaml`: the first `0.1 m/s` qualification slice
+  of the staged `0.1 -> 0.2 -> 0.4 m/s` command curriculum. It resumes the
+  complete accepted v14 training session.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.

@@ -51,3 +51,24 @@ def test_training_defaults_match_the_active_locomotion_stage() -> None:
         "learning_rate": 0.00003,
         "checkpoint_interval": 524288,
     }
+
+
+def test_low_speed_qualification_preserves_safe_v14_settings() -> None:
+    current = yaml.safe_load(
+        (REPO_ROOT / "configs" / "locomotion.yaml").read_text()
+    )
+    low_speed = yaml.safe_load(
+        (REPO_ROOT / "configs" / "locomotion_stage1_low_speed.yaml").read_text()
+    )
+
+    assert low_speed["status"] == "locomotion_stage1_low_speed_qualification"
+    assert low_speed["environment"]["command_x_range"] == [0.08, 0.12]
+    assert low_speed["manual_evaluation"]["fixed_command"] == [0.1, 0.0, 0.0]
+    assert low_speed["ppo"]["num_timesteps"] == 524288
+    assert low_speed["checkpoint"]["scope"] == "full_training_session"
+    assert low_speed["checkpoint"]["includes_rollout_state"] is True
+    assert low_speed["rocm_guardrails"] == current["rocm_guardrails"]
+
+    for key, value in current["reward"].items():
+        if key != "profile":
+            assert low_speed["reward"][key] == value
