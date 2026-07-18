@@ -58,7 +58,7 @@ class Go2Z1Env(MjxEnv):
     def __init__(
         self,
         xml_path: str | Path = DEFAULT_XML,
-        ctrl_dt: float = 0.02,
+        ctrl_dt: float = 0.01,
         action_scale: float = 0.25,
         tilt_limit_deg: float = 60.0,
         mask_arm: bool = True,
@@ -145,13 +145,11 @@ class Go2Z1Env(MjxEnv):
             action = action * _LEG_MASK
         ctrl = self._home_ctrl + self._action_scale * action
 
-        # Unroll the n_substeps physics steps as a fixed Python loop (traced as
+        # Unroll the five physics substeps as a fixed Python loop (traced as
         # sequential mjx.step ops) instead of lax.scan. On gfx1100, vmap of a
-        # lax.scan over mjx.step on this complex model segfaults in XLA/ROCm
-        # even for short scans, while vmap of sequential mjx.step calls is the
-        # known-stable path (see src/amd_robo/platform/rollout_probe.py). Open
-        # question for G2: whether Brax's scan-based rollout over this step is
-        # stable on gfx1100, or needs a small unroll_length / chunking.
+        # lax.scan over mjx.step on this complex model segfaults in XLA/ROCm.
+        # Ten Python-unrolled substeps also fail during CompileAndLoad, while
+        # five pass together with a Brax compiled training scan of two.
         data = state.data
         for _ in range(self.n_substeps):
             data = data.replace(ctrl=ctrl)

@@ -14,6 +14,8 @@ from amd_robo.platform.smoke import _block_tree, _tree_is_finite
 def test_env_matches_contract() -> None:
     env = Go2Z1Env()
     assert env.action_size == 19
+    assert env.dt == 0.01
+    assert env.n_substeps == 5
     assert isinstance(env, ProjectMjxEnv)
     assert getattr(env.mjx_model.impl, "value", None) == "jax"
     assert not jnp.allclose(env.mj_model.qpos0[7:], env.mj_model.key_qpos[0, 7:])
@@ -67,8 +69,8 @@ def test_reset_step_finite_under_vmap() -> None:
     Driven by a sequential Python loop reusing one compiled vmap kernel, NOT a
     fused lax.scan: a long fused scan over env.step (which itself scans over
     n_substeps) trips the known gfx1100 long-fused-scan XLA-ROCm segfault (see
-    src/amd_robo/platform/rollout_probe.py). Brax PPO is unaffected because it
-    scans over a small unroll_length, not a whole episode.
+    src/amd_robo/platform/rollout_probe.py). Brax PPO also needs the measured
+    five-substep control kernel and a compiled training scan no larger than two.
     """
     env = Go2Z1Env()
     n_envs, n_control_steps = 256, 50

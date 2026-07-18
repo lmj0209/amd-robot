@@ -1,0 +1,442 @@
+#!/usr/bin/env python3
+"""ROCm-safe Brax PPO smoke for command-conditioned Go2+Z1 locomotion."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import inspect
+import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+import jax  # noqa: E402
+import jax.numpy as jnp  # noqa: E402
+
+from amd_robo.envs.go2_z1_locomotion import Go2Z1LocomotionEnv  # noqa: E402
+from amd_robo.training.host_loop import plan_brax_host_loop  # noqa: E402
+from amd_robo.training.learner_checkpoint import (  # noqa: E402
+    load_training_session_checkpoint,
+    make_training_session_checkpoint_callback,
+)
+
+
+def _load_config(path: str) -> tuple[dict, str]:
+    import yaml
+
+    payload = Path(path).read_bytes()
+    return yaml.safe_load(payload), hashlib.sha256(payload).hexdigest()
+
+
+def _make_env(
+    config: dict,
+    *,
+    command_override=None,
+    randomize_reset: bool | None = None,
+) -> Go2Z1LocomotionEnv:
+    environment = config["environment"]
+    reward = config["reward"]
+    if randomize_reset is None:
+        randomize_reset = environment["randomized_reset"]
+    return Go2Z1LocomotionEnv(
+        ctrl_dt=environment["control_timestep"],
+        foot_condim=environment["foot_condim"],
+        bound_observations=environment["bounded_observations"],
+        command_x_range=environment["command_x_range"],
+        zero_command_probability=environment["zero_command_probability"],
+        command_override=command_override,
+        randomize_reset=randomize_reset,
+        tracking_sigma=reward["tracking_sigma"],
+        tracking_linear_velocity_scale=reward["tracking_linear_velocity_scale"],
+        tracking_angular_velocity_scale=reward["tracking_angular_velocity_scale"],
+        pose_scale=reward["pose_scale"],
+        vertical_velocity_cost_scale=reward["vertical_velocity_cost_scale"],
+        angular_velocity_xy_cost_scale=reward["angular_velocity_xy_cost_scale"],
+        orientation_cost_scale=reward["orientation_cost_scale"],
+        stand_still_cost_scale=reward["stand_still_cost_scale"],
+        torque_cost_scale=reward["torque_cost_scale"],
+        action_rate_cost_scale=reward["action_rate_cost_scale"],
+        action_magnitude_cost_scale=reward["action_magnitude_cost_scale"],
+        arm_action_magnitude_cost_scale=reward["arm_action_magnitude_cost_scale"],
+        feet_slip_cost_scale=reward["feet_slip_cost_scale"],
+        feet_clearance_cost_scale=reward["feet_clearance_cost_scale"],
+        feet_height_cost_scale=reward["feet_height_cost_scale"],
+        feet_air_time_scale=reward["feet_air_time_scale"],
+        max_foot_height=reward["max_foot_height"],
+        termination_cost_scale=reward["termination_cost_scale"],
+        illegal_contact_cost_scale=reward["illegal_contact_cost_scale"],
+        workspace_limit=environment["workspace_limit"],
+    )
+
+
+def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
+    from mujoco_playground import wrapper
+
+    wrapped = wrapper.wrap_for_brax_training(
+        env, episode_length=n_steps + 1, action_repeat=1
+    )
+    reset_fn = jax.jit(wrapped.reset)
+    step_fn = jax.jit(wrapped.step)
+    keys = jax.random.split(jax.random.PRNGKey(seed), n_envs)
+    initial_state = reset_fn(keys)
+
+    results = {}
+    for name, action_fn in action_fns.items():
+        state = initial_state
+        initial_x = state.data.qpos[:, 0]
+        reward_metric_names = tuple(
+            key for key in state.metrics if key.startswith("reward/")
+        )
+        reward_component_totals = {
+            key: jnp.zeros(()) for key in reward_metric_names
+        }
+        reward_total = jnp.zeros(())
+        forward_velocity_total = jnp.zeros(())
+        tracking_error_total = jnp.zeros(())
+        tilt_total = jnp.zeros(())
+        done_count = jnp.zeros((), dtype=jnp.int32)
+        illegal_contact_count = jnp.zeros((), dtype=jnp.int32)
+        nonfinite_state_count = jnp.zeros((), dtype=jnp.int32)
+        action_square_total = jnp.zeros(())
+        leg_action_square_total = jnp.zeros(())
+        arm_action_square_total = jnp.zeros(())
+        for _ in range(n_steps):
+            actions = action_fn(state.obs)
+            state = step_fn(state, actions)
+            reward_total += jnp.mean(state.reward)
+            for key in reward_metric_names:
+                reward_component_totals[key] += jnp.mean(state.metrics[key])
+            forward_velocity_total += jnp.mean(state.metrics["base_forward_velocity"])
+            tracking_error_total += jnp.mean(state.metrics["tracking_linear_error"])
+            tilt_total += jnp.mean(state.metrics["tilt_deg"])
+            done_count += jnp.sum(state.done.astype(jnp.int32))
+            illegal_contact_count += jnp.sum(
+                state.metrics["illegal_contact"].astype(jnp.int32)
+            )
+            nonfinite_state_count += jnp.sum(
+                state.metrics["nonfinite_state"].astype(jnp.int32)
+            )
+            action_square_total += jnp.mean(actions * actions)
+            leg_action_square_total += jnp.mean(actions[:, :12] ** 2)
+            arm_action_square_total += jnp.mean(actions[:, 12:] ** 2)
+        results[name] = {
+            "mean_reward": float(reward_total / n_steps),
+            "mean_forward_velocity": float(forward_velocity_total / n_steps),
+            "mean_tracking_error": float(tracking_error_total / n_steps),
+            "mean_tilt_deg": float(tilt_total / n_steps),
+            "mean_forward_displacement": float(
+                jnp.mean(state.data.qpos[:, 0] - initial_x)
+            ),
+            "action_rms": float(jnp.sqrt(action_square_total / n_steps)),
+            "leg_action_rms": float(jnp.sqrt(leg_action_square_total / n_steps)),
+            "arm_action_rms": float(jnp.sqrt(arm_action_square_total / n_steps)),
+            "done_count": int(done_count),
+            "illegal_contact_count": int(illegal_contact_count),
+            "nonfinite_state_count": int(nonfinite_state_count),
+        }
+        results[name].update(
+            {
+                f"mean_{key.replace('/', '_')}": float(total / n_steps)
+                for key, total in reward_component_totals.items()
+            }
+        )
+    return results
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", default="configs/locomotion.yaml")
+    parser.add_argument("--num-timesteps", type=int)
+    parser.add_argument("--episode-length", type=int)
+    parser.add_argument("--num-envs", type=int)
+    parser.add_argument("--batch-size", type=int)
+    parser.add_argument("--num-minibatches", type=int)
+    parser.add_argument("--learning-rate", type=float)
+    parser.add_argument("--learning-rate-schedule")
+    parser.add_argument("--desired-kl", type=float)
+    parser.add_argument("--no-normalize-observations", action="store_true")
+    parser.add_argument("--params-in")
+    parser.add_argument("--params-out")
+    parser.add_argument("--eval-only", action="store_true")
+    parser.add_argument("--skip-eval", action="store_true")
+    parser.add_argument("--training-state-dir")
+    parser.add_argument("--resume-training-state")
+    args = parser.parse_args()
+
+    config, config_sha256 = _load_config(args.config)
+    ppo_config = config["ppo"]
+    guardrails = config["rocm_guardrails"]
+    evaluation = config["manual_evaluation"]
+    checkpoint = config["checkpoint"]
+    num_timesteps = (
+        ppo_config["num_timesteps"]
+        if args.num_timesteps is None
+        else args.num_timesteps
+    )
+    episode_length = (
+        ppo_config["episode_length"]
+        if args.episode_length is None
+        else args.episode_length
+    )
+    num_envs = ppo_config["num_envs"] if args.num_envs is None else args.num_envs
+    batch_size = (
+        ppo_config["batch_size"] if args.batch_size is None else args.batch_size
+    )
+    num_minibatches = (
+        ppo_config["num_minibatches"]
+        if args.num_minibatches is None
+        else args.num_minibatches
+    )
+    learning_rate = (
+        ppo_config["learning_rate"]
+        if args.learning_rate is None
+        else args.learning_rate
+    )
+    learning_rate_schedule = (
+        ppo_config["learning_rate_schedule"]
+        if args.learning_rate_schedule is None
+        else args.learning_rate_schedule
+    )
+    desired_kl = (
+        ppo_config["desired_kl"] if args.desired_kl is None else args.desired_kl
+    )
+    normalize_observations = (
+        ppo_config["normalize_observations"] and not args.no_normalize_observations
+    )
+    if args.eval_only:
+        if not args.params_in:
+            parser.error("--eval-only requires --params-in")
+        num_timesteps = 0
+    if args.params_in and args.resume_training_state:
+        parser.error("--params-in and --resume-training-state are mutually exclusive")
+    if args.eval_only and (
+        args.skip_eval or args.training_state_dir or args.resume_training_state
+    ):
+        parser.error(
+            "--eval-only cannot be combined with checkpoint, resume, or --skip-eval"
+        )
+    if (
+        num_timesteps < 0
+        or episode_length <= 0
+        or learning_rate <= 0.0
+        or num_envs <= 0
+        or batch_size <= 0
+        or num_minibatches <= 0
+    ):
+        parser.error(
+            "timesteps must be non-negative; episode length and learning rate "
+            "and PPO batch dimensions must be positive"
+        )
+    if batch_size * num_minibatches % num_envs:
+        parser.error("batch_size * num_minibatches must be divisible by num_envs")
+
+    from amd_robo.platform import _compat
+
+    _compat.apply_brax_compat()
+    from brax.io import model as brax_model
+    from brax.training.agents.ppo import train as ppo
+    from mujoco_playground import wrapper
+
+    env = _make_env(config)
+    max_substeps = guardrails["max_physics_substeps_per_control"]
+    if env.n_substeps > max_substeps:
+        raise ValueError(
+            f"physics substeps per control ({env.n_substeps}) exceed the ROCm "
+            f"guardrail ({max_substeps})"
+        )
+
+    env_steps_per_training_step = (
+        batch_size * ppo_config["unroll_length"] * num_minibatches
+    )
+    actual_timesteps = host_calls = training_scan = 0
+    brax_num_evals = 1
+    if not args.eval_only:
+        host_loop = plan_brax_host_loop(
+            num_timesteps=num_timesteps,
+            env_steps_per_training_step=env_steps_per_training_step,
+            max_training_steps_per_call=guardrails["max_training_steps_per_host_call"],
+        )
+        actual_timesteps = host_loop.actual_timesteps
+        host_calls = host_loop.host_calls
+        training_scan = host_loop.training_steps_per_call
+        brax_num_evals = host_loop.brax_num_evals
+
+    print(
+        "locomotion smoke: "
+        f"num_envs={num_envs} batch_size={batch_size} "
+        f"num_minibatches={num_minibatches} "
+        f"episode_length={episode_length} "
+        f"num_timesteps={num_timesteps} "
+        f"actual_timesteps={actual_timesteps} "
+        f"host_calls={host_calls} training_scan={training_scan} "
+        f"control_timestep={env.dt} physics_substeps={env.n_substeps} "
+        f"action_size={env.action_size} observation_size=73 "
+        f"learning_rate={learning_rate} "
+        f"learning_rate_schedule={learning_rate_schedule} "
+        f"desired_kl={desired_kl} "
+        f"normalize_observations={normalize_observations} "
+        f"config={args.config} config_sha256={config_sha256} "
+        f"seed={config['seed']} "
+        f"matmul_precision="
+        f"{os.environ.get('JAX_DEFAULT_MATMUL_PRECISION', 'default')} "
+        "run_evals=False",
+        flush=True,
+    )
+
+    def progress(step, training_metrics):
+        fields = []
+        for key in (
+            "training/walltime",
+            "training/sps",
+            "training/kl_mean",
+            "training/learning_rate",
+            "training/policy_dist_max_loc",
+            "training/policy_dist_min_std",
+            "training/policy_loss",
+            "training/total_loss",
+            "training/v_loss",
+        ):
+            if key in training_metrics:
+                fields.append(f"{key}={training_metrics[key]}")
+        print(
+            f"LOCOMOTION_TRAINING_PROGRESS step={step} {' '.join(fields)}",
+            flush=True,
+        )
+
+    restore_params = brax_model.load_params(args.params_in) if args.params_in else None
+    if args.params_in:
+        print(f"PARAMS_LOADED path={args.params_in}", flush=True)
+
+    def training_session_fn(*unused):
+        return None
+
+    restore_training_session_fn = None
+    supports_training_session = (
+        "training_session_fn" in inspect.signature(ppo.train).parameters
+    )
+    if (
+        args.training_state_dir or args.resume_training_state
+    ) and not supports_training_session:
+        raise RuntimeError(
+            "Brax training-session API patch is missing; rerun scripts/rgc_setup.sh"
+        )
+    if args.training_state_dir:
+        metadata = {
+            "config": args.config,
+            "config_sha256": config_sha256,
+            "num_timesteps": actual_timesteps,
+            "episode_length": episode_length,
+            "num_envs": num_envs,
+            "batch_size": batch_size,
+            "num_minibatches": num_minibatches,
+            "control_timestep": env.dt,
+            "physics_substeps": env.n_substeps,
+            "host_calls": host_calls,
+            "training_scan": training_scan,
+            "learning_rate": learning_rate,
+            "learning_rate_schedule": learning_rate_schedule,
+            "desired_kl": desired_kl,
+            "normalize_observations": normalize_observations,
+            "seed": config["seed"],
+        }
+        training_session_fn = make_training_session_checkpoint_callback(
+            args.training_state_dir,
+            interval_steps=checkpoint["interval_steps"],
+            metadata=metadata,
+            announce=lambda message: print(message, flush=True),
+        )
+    if args.resume_training_state:
+
+        def restore_training_session_fn(template):
+            restored = load_training_session_checkpoint(
+                args.resume_training_state,
+                training_session_template=template,
+            )
+            print(
+                f"TRAINING_SESSION_LOADED path={args.resume_training_state}",
+                flush=True,
+            )
+            return restored
+
+    training_state_kwargs = {}
+    if supports_training_session:
+        training_state_kwargs = {
+            "training_session_fn": training_session_fn,
+            "restore_training_session_fn": restore_training_session_fn,
+        }
+
+    event_prefix = "EVAL_ONLY" if args.eval_only else "LOCOMOTION_TRAINING"
+    print(f"{event_prefix}_START timesteps={num_timesteps}", flush=True)
+    make_policy, params, metrics = ppo.train(
+        environment=env,
+        num_timesteps=num_timesteps,
+        max_devices_per_host=1,
+        num_envs=num_envs,
+        episode_length=episode_length,
+        action_repeat=1,
+        learning_rate=learning_rate,
+        learning_rate_schedule=learning_rate_schedule,
+        learning_rate_schedule_min_lr=min(1e-5, learning_rate),
+        learning_rate_schedule_max_lr=learning_rate,
+        desired_kl=desired_kl,
+        entropy_cost=ppo_config["entropy_cost"],
+        discounting=ppo_config["discounting"],
+        unroll_length=ppo_config["unroll_length"],
+        batch_size=batch_size,
+        num_minibatches=num_minibatches,
+        num_updates_per_batch=ppo_config["num_updates_per_batch"],
+        max_grad_norm=ppo_config["max_grad_norm"],
+        normalize_observations=normalize_observations,
+        num_evals=brax_num_evals,
+        num_eval_envs=4,
+        run_evals=False,
+        progress_fn=progress,
+        seed=config["seed"],
+        restore_params=restore_params,
+        wrap_env_fn=wrapper.wrap_for_brax_training,
+        **training_state_kwargs,
+    )
+    print(f"{event_prefix}_DONE", flush=True)
+    for key in sorted(metrics):
+        print(f"METRIC {key}: {metrics[key]}", flush=True)
+    if args.params_out:
+        brax_model.save_params(args.params_out, params)
+        print(f"PARAMS_SAVED path={args.params_out}", flush=True)
+    if args.skip_eval:
+        print("LOCOMOTION_SMOKE_DONE eval=skipped", flush=True)
+        return 0
+
+    policy = make_policy(params, deterministic=True)
+    trained_action = jax.jit(lambda obs: policy(obs, jax.random.PRNGKey(0))[0])
+
+    def zero_action(obs):
+        return jnp.zeros((obs.shape[0], env.action_size))
+
+    eval_env = _make_env(
+        config,
+        command_override=evaluation["fixed_command"],
+        randomize_reset=False,
+    )
+    print("LOCOMOTION_EVAL_START implementation=sequential_python_loop", flush=True)
+    results = _sequential_eval(
+        eval_env,
+        {"baseline": zero_action, "trained": trained_action},
+        n_envs=evaluation["num_envs"],
+        n_steps=evaluation["num_steps"],
+        seed=evaluation["seed"],
+    )
+    for policy_name, policy_metrics in results.items():
+        print(
+            f"LOCOMOTION_EVAL policy={policy_name} "
+            + " ".join(f"{key}={value}" for key, value in policy_metrics.items()),
+            flush=True,
+        )
+    print("LOCOMOTION_SMOKE_DONE", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

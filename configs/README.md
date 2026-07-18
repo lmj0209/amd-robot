@@ -9,9 +9,12 @@ and RGC system fingerprint.
 - `standing.yaml`: safe replay defaults for the completed standing
   qualification and ROCm guardrails, including the five-physics-substep
   control-kernel limit measured on gfx1100.
+- `locomotion.yaml`: current Phase-2 forward-velocity curriculum. The arm and
+  gripper remain masked at their home controls while the policy keeps the
+  frozen 19-dimensional action interface.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
-  standing run loaded the archived configuration and overrode the logged
-  timestep and episode-length arguments.
+  standing and locomotion runs retain the exact configurations identified by
+  their logged SHA256 values.
 - `smoke.yaml`: Gate G0 diagnostic sizes.
 
 Measured values replace `TODO` only after verification on RGC.

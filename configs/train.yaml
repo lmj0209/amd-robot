@@ -9,11 +9,11 @@ curriculum:
   - stage: joint_finetune
 
 ppo:
-  num_timesteps: TODO_RGC
-  num_envs: TODO_RGC
-  episode_length: TODO_TASK
-  learning_rate: TODO_SMOKE
-  checkpoint_interval: TODO_SMOKE
+  num_timesteps: 2097152
+  num_envs: 256
+  episode_length: 256
+  learning_rate: 0.00003
+  checkpoint_interval: 524288
 
 logging:
   local_csv: true

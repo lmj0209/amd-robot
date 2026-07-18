@@ -14,6 +14,9 @@ def test_env_config_matches_python_contract() -> None:
 
     config = yaml.safe_load((REPO_ROOT / "configs" / "env.yaml").read_text())
     assert config["implementation"] == "jax"
+    assert config["robot"]["route"] == "go2_z1"
+    assert config["control"]["simulation_dt"] == 0.002
+    assert config["control"]["control_dt"] == 0.01
     assert config["control"]["action_size"] == ACTION_LAYOUT.size
     assert config["control"]["action_layout"] == {
         "legs": [0, 12],

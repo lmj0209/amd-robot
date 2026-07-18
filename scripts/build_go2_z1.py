@@ -69,6 +69,7 @@ EXPECTED_ACTUATORS = (
     + list(EXPECTED_ARM_ACTUATORS)
     + list(EXPECTED_GRIPPER_ACTUATOR)
 )
+FOOT_SITE_NAMES = ("FL_foot", "FR_foot", "RL_foot", "RR_foot")
 
 # Placeholder carry pose: Z1 stator welded on top of the trunk, arm reaching
 # forward over the head (180 deg about z maps the Z1 home reach from -x to +x).
@@ -233,10 +234,22 @@ def build() -> ET.Element:
         for a in list(src.find("actuator")):
             actuator.append(a)
 
-    # sensor: keep Go2 IMU + joint sensors (arm sensors can be added later).
+    # sensor: keep Go2 IMU + joint sensors and add the four foot linear
+    # velocities used by the official Playground-style locomotion rewards.
     go2_sensor = go2.find("sensor")
     if go2_sensor is not None:
-        merged.append(_deepcopy(go2_sensor))
+        sensor = _deepcopy(go2_sensor)
+        for site_name in FOOT_SITE_NAMES:
+            ET.SubElement(
+                sensor,
+                "framelinvel",
+                {
+                    "name": f"{site_name}_linvel",
+                    "objtype": "site",
+                    "objname": site_name,
+                },
+            )
+        merged.append(sensor)
 
     # keyframe: one merged "home" = Go2 home qpos/ctrl ++ Z1 home qpos/ctrl.
     # Valid because arm joints are the last 7 in qpos (welded as last child).

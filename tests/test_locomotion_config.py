@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+yaml = pytest.importorskip("yaml")
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_locomotion_config_is_rocm_safe_and_preserves_action_contract() -> None:
+    config = yaml.safe_load((REPO_ROOT / "configs" / "locomotion.yaml").read_text())
+
+    assert config["status"] == "locomotion_gait_curriculum"
+    assert config["algorithm"] == "brax_ppo"
+    assert config["environment"]["control_timestep"] == 0.01
+    assert config["environment"]["foot_condim"] == 6
+    assert config["environment"]["command_x_range"] == [0.2, 0.6]
+    assert config["environment"]["zero_command_probability"] == 0.1
+    assert config["reward"]["profile"] == "forward_gait_curriculum_v4"
+    assert config["reward"]["tracking_linear_velocity_scale"] == 5.0
+    assert config["reward"]["orientation_cost_scale"] == 5.0
+    assert config["reward"]["feet_clearance_cost_scale"] == 0.5
+    assert config["reward"]["arm_action_magnitude_cost_scale"] == 0.01
+    assert config["reward"]["feet_air_time_scale"] == 0.1
+    assert config["reward"]["max_foot_height"] == 0.1
+    assert config["rocm_guardrails"] == {
+        "max_physics_substeps_per_control": 5,
+        "max_training_steps_per_host_call": 2,
+        "brax_run_evals": False,
+    }
+    assert config["ppo"]["num_timesteps"] == 2097152
+    assert config["ppo"]["num_envs"] == 256
+    assert config["ppo"]["batch_size"] == 64
+    assert config["ppo"]["learning_rate"] == 0.00003
+    assert config["ppo"]["learning_rate_schedule"] == "NONE"
+    assert config["ppo"]["normalize_observations"] is False
+    assert config["ppo"]["entropy_cost"] == 0.01
+    assert config["checkpoint"]["interval_steps"] == 524288
+    assert config["manual_evaluation"]["fixed_command"] == [0.4, 0.0, 0.0]
+
+
+def test_training_defaults_match_the_active_locomotion_stage() -> None:
+    config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
+
+    assert config["ppo"] == {
+        "num_timesteps": 2097152,
+        "num_envs": 256,
+        "episode_length": 256,
+        "learning_rate": 0.00003,
+        "checkpoint_interval": 524288,
+    }
