@@ -336,6 +336,10 @@
     <framepos objtype="site" objname="imu" name="global_position" />
     <framelinvel objtype="site" objname="imu" name="global_linvel" />
     <frameangvel objtype="site" objname="imu" name="global_angvel" />
+    <framelinvel name="FL_foot_linvel" objtype="site" objname="FL_foot" />
+    <framelinvel name="FR_foot_linvel" objtype="site" objname="FR_foot" />
+    <framelinvel name="RL_foot_linvel" objtype="site" objname="RL_foot" />
+    <framelinvel name="RR_foot_linvel" objtype="site" objname="RR_foot" />
   </sensor>
   <keyframe>
     <key name="home" qpos="0 0 0.27 1 0 0 0 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.785 -0.261 -0.523 0 0 0" ctrl="0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.785 -0.261 -0.523 0 0 0" />
