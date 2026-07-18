@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,22 @@ def test_env_config_matches_python_contract() -> None:
         "gripper": [18, 19],
     }
     assert set(config["termination_requires"]) == REQUIRED_TERMINATION_SIGNALS
+
+
+def test_assembled_robot_matches_the_asset_manifest() -> None:
+    manifest = yaml.safe_load(
+        (REPO_ROOT / "assets" / "manifest.yaml").read_text()
+    )
+    assembled = next(
+        asset for asset in manifest["assets"] if asset["id"] == "go2_z1"
+    )
+    robot_path = REPO_ROOT / assembled["repository_path"] / "go2_z1.xml"
+
+    assert robot_path.read_bytes().endswith(b"\n")
+    assert (
+        hashlib.sha256(robot_path.read_bytes()).hexdigest()
+        == assembled["sha256"]["go2_z1.xml"]
+    )
 
 
 def test_smoke_config_is_fail_closed() -> None:

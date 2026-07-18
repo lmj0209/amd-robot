@@ -361,6 +361,10 @@ def main() -> int:
     merged = build()
     ET.indent(merged, space="  ")
     ET.ElementTree(merged).write(OUT_XML, encoding="utf-8", xml_declaration=True)
+    # Keep the committed generated asset POSIX-text friendly and make its
+    # manifest hash independent of the editor used to inspect it.
+    with OUT_XML.open("ab") as output:
+        output.write(b"\n")
     scene = build_scene()
     ET.indent(scene, space="  ")
     ET.ElementTree(scene).write(OUT_SCENE_XML, encoding="utf-8", xml_declaration=True)

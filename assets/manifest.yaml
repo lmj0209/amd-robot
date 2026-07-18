@@ -30,7 +30,7 @@ assets:
     files: [go2_z1.xml, scene_mjx.xml]
     repository_path: assets/menagerie/go2_z1
     sha256:
-      go2_z1.xml: 79be11c05ec8c66f420280f455cc40889fa0296ae8937a905718a5d4b9f3609c
+      go2_z1.xml: e0986f9e851d8ef723d712b32ae171e6cdb27f614850043fc3f4dfecbffafbcc
       scene_mjx.xml: d5735f1e210a7371bf0c7c92a09635e37f87fa34f6d51d970111f69098da8325
 
   - id: b2_piper
