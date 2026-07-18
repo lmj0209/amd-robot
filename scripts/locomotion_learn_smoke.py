@@ -173,6 +173,14 @@ def main() -> int:
             "metric is the derived nonfinite_state value and its episode sum."
         ),
     )
+    parser.add_argument(
+        "--migrate-missing-arm-action-magnitude",
+        action="store_true",
+        help=(
+            "Also migrate a full-session checkpoint created before the "
+            "reward/arm_action_magnitude metric was introduced."
+        ),
+    )
     args = parser.parse_args()
 
     config, config_sha256 = _load_config(args.config)
@@ -221,9 +229,12 @@ def main() -> int:
         num_timesteps = 0
     if args.params_in and args.resume_training_state:
         parser.error("--params-in and --resume-training-state are mutually exclusive")
-    if args.migrate_missing_nonfinite_state and not args.resume_training_state:
+    if (
+        args.migrate_missing_nonfinite_state
+        or args.migrate_missing_arm_action_magnitude
+    ) and not args.resume_training_state:
         parser.error(
-            "--migrate-missing-nonfinite-state requires --resume-training-state"
+            "training-session metric migration requires --resume-training-state"
         )
     if args.eval_only and (
         args.skip_eval or args.training_state_dir or args.resume_training_state
@@ -364,30 +375,42 @@ def main() -> int:
     if args.resume_training_state:
 
         def restore_training_session_fn(template):
+            migration_metric_names = []
+            if args.migrate_missing_arm_action_magnitude:
+                migration_metric_names.append("reward/arm_action_magnitude")
             if args.migrate_missing_nonfinite_state:
+                migration_metric_names.append("nonfinite_state")
+            if migration_metric_names:
                 training_state, env_state, local_key, key_envs = template
-                if "nonfinite_state" not in env_state.metrics:
-                    raise RuntimeError(
-                        "current training-session template has no "
-                        "nonfinite_state metric to migrate"
-                    )
-                nonfinite_state = env_state.metrics["nonfinite_state"]
                 episode_metrics = env_state.info.get("episode_metrics", {})
-                if "nonfinite_state" not in episode_metrics:
+                missing_current_metrics = [
+                    name
+                    for name in migration_metric_names
+                    if name not in env_state.metrics or name not in episode_metrics
+                ]
+                if missing_current_metrics:
                     raise RuntimeError(
-                        "current training-session template has no aggregated "
-                        "nonfinite_state episode metric to migrate"
+                        "current training-session template is missing migration "
+                        f"targets: {missing_current_metrics}"
                     )
-                episode_nonfinite_state = episode_metrics["nonfinite_state"]
+                initialized_metrics = {
+                    name: env_state.metrics[name]
+                    for name in migration_metric_names
+                }
+                initialized_episode_metrics = {
+                    name: episode_metrics[name]
+                    for name in migration_metric_names
+                }
+                migration_metric_set = set(migration_metric_names)
                 legacy_metrics = {
                     name: value
                     for name, value in env_state.metrics.items()
-                    if name != "nonfinite_state"
+                    if name not in migration_metric_set
                 }
                 legacy_episode_metrics = {
                     name: value
                     for name, value in episode_metrics.items()
-                    if name != "nonfinite_state"
+                    if name not in migration_metric_set
                 }
                 legacy_template = (
                     training_state,
@@ -409,13 +432,15 @@ def main() -> int:
                 )
                 current_leaf_count = len(jax.tree_util.tree_leaves(template))
                 legacy_leaf_count = len(jax.tree_util.tree_leaves(legacy_template))
+                expected_added_leaves = 2 * len(migration_metric_names)
                 if (
-                    current_leaf_count != legacy_leaf_count + 2
+                    current_leaf_count
+                    != legacy_leaf_count + expected_added_leaves
                     or manifest.get("leaf_count") != legacy_leaf_count
                 ):
                     raise RuntimeError(
                         "refusing training-session migration: expected only "
-                        "the nonfinite_state metric and its episode sum, "
+                        f"{migration_metric_names} and their episode sums, "
                         f"manifest={manifest.get('leaf_count')} "
                         f"legacy={legacy_leaf_count} current={current_leaf_count}"
                     )
@@ -434,13 +459,13 @@ def main() -> int:
                     restored_env_state.replace(
                         metrics={
                             **restored_env_state.metrics,
-                            "nonfinite_state": nonfinite_state,
+                            **initialized_metrics,
                         },
                         info={
                             **restored_env_state.info,
                             "episode_metrics": {
                                 **restored_env_state.info["episode_metrics"],
-                                "nonfinite_state": episode_nonfinite_state,
+                                **initialized_episode_metrics,
                             },
                         },
                     ),
@@ -457,8 +482,8 @@ def main() -> int:
                     )
                 print(
                     "TRAINING_SESSION_MIGRATED "
-                    "added_metric=nonfinite_state "
-                    "added_leaves=2 "
+                    f"added_metrics={','.join(migration_metric_names)} "
+                    f"added_leaves={expected_added_leaves} "
                     f"legacy_leaves={legacy_leaf_count} "
                     f"current_leaves={current_leaf_count}",
                     flush=True,

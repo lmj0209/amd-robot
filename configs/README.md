@@ -18,6 +18,10 @@ and RGC system fingerprint.
 - `locomotion_stage1_low_speed_sensitive.yaml`: the second `0.1 m/s`
   qualification. It narrows the bounded tracking kernel after the first slice
   showed that standing still already saturated the broad tracking reward.
+- `locomotion_stage1_forward_extension.yaml`: a short, reward-compatible
+  continuation of the faster v13 session at its original `0.2-0.6 m/s`
+  command range. It tests whether more on-objective training improves the
+  measured `0.4 m/s` gait before committing a larger budget.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.

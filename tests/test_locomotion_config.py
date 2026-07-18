@@ -104,3 +104,32 @@ def test_sensitive_low_speed_qualification_changes_only_the_intended_knobs() -> 
             first_values.pop(key)
             sensitive_values.pop(key)
         assert sensitive_values == first_values
+
+
+def test_forward_extension_is_reward_compatible_with_v13() -> None:
+    archived = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "evidence"
+            / "locomotion_gait_v13_2026-07-18.yaml"
+        ).read_text()
+    )
+    extension = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_forward_extension.yaml"
+        ).read_text()
+    )
+
+    assert extension["environment"] == archived["environment"]
+    assert extension["manual_evaluation"] == archived["manual_evaluation"]
+    assert extension["reward"]["arm_action_magnitude_cost_scale"] == 0.0
+    extension_reward = dict(extension["reward"])
+    archived_reward = dict(archived["reward"])
+    extension_reward.pop("profile")
+    extension_reward.pop("arm_action_magnitude_cost_scale")
+    archived_reward.pop("profile")
+    assert extension_reward == archived_reward
+    assert extension["ppo"]["num_timesteps"] == 524288
