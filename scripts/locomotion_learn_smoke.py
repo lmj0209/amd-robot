@@ -170,7 +170,7 @@ def main() -> int:
         action="store_true",
         help=(
             "Migrate a pre-guard full-session checkpoint whose only missing "
-            "PyTree leaf is the derived nonfinite_state metric."
+            "metric is the derived nonfinite_state value and its episode sum."
         ),
     )
     args = parser.parse_args()
@@ -372,14 +372,32 @@ def main() -> int:
                         "nonfinite_state metric to migrate"
                     )
                 nonfinite_state = env_state.metrics["nonfinite_state"]
+                episode_metrics = env_state.info.get("episode_metrics", {})
+                if "nonfinite_state" not in episode_metrics:
+                    raise RuntimeError(
+                        "current training-session template has no aggregated "
+                        "nonfinite_state episode metric to migrate"
+                    )
+                episode_nonfinite_state = episode_metrics["nonfinite_state"]
                 legacy_metrics = {
                     name: value
                     for name, value in env_state.metrics.items()
                     if name != "nonfinite_state"
                 }
+                legacy_episode_metrics = {
+                    name: value
+                    for name, value in episode_metrics.items()
+                    if name != "nonfinite_state"
+                }
                 legacy_template = (
                     training_state,
-                    env_state.replace(metrics=legacy_metrics),
+                    env_state.replace(
+                        metrics=legacy_metrics,
+                        info={
+                            **env_state.info,
+                            "episode_metrics": legacy_episode_metrics,
+                        },
+                    ),
                     local_key,
                     key_envs,
                 )
@@ -392,12 +410,12 @@ def main() -> int:
                 current_leaf_count = len(jax.tree_util.tree_leaves(template))
                 legacy_leaf_count = len(jax.tree_util.tree_leaves(legacy_template))
                 if (
-                    current_leaf_count != legacy_leaf_count + 1
+                    current_leaf_count != legacy_leaf_count + 2
                     or manifest.get("leaf_count") != legacy_leaf_count
                 ):
                     raise RuntimeError(
-                        "refusing training-session migration: expected exactly "
-                        "one missing nonfinite_state leaf, "
+                        "refusing training-session migration: expected only "
+                        "the nonfinite_state metric and its episode sum, "
                         f"manifest={manifest.get('leaf_count')} "
                         f"legacy={legacy_leaf_count} current={current_leaf_count}"
                     )
@@ -417,7 +435,14 @@ def main() -> int:
                         metrics={
                             **restored_env_state.metrics,
                             "nonfinite_state": nonfinite_state,
-                        }
+                        },
+                        info={
+                            **restored_env_state.info,
+                            "episode_metrics": {
+                                **restored_env_state.info["episode_metrics"],
+                                "nonfinite_state": episode_nonfinite_state,
+                            },
+                        },
                     ),
                     restored_local_key,
                     restored_key_envs,
@@ -433,6 +458,7 @@ def main() -> int:
                 print(
                     "TRAINING_SESSION_MIGRATED "
                     "added_metric=nonfinite_state "
+                    "added_leaves=2 "
                     f"legacy_leaves={legacy_leaf_count} "
                     f"current_leaves={current_leaf_count}",
                     flush=True,
