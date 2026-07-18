@@ -133,3 +133,33 @@ def test_forward_extension_is_reward_compatible_with_v13() -> None:
     archived_reward.pop("profile")
     assert extension_reward == archived_reward
     assert extension["ppo"]["num_timesteps"] == 524288
+
+
+def test_action_scale_qualification_changes_only_the_control_range() -> None:
+    extension = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_forward_extension.yaml"
+        ).read_text()
+    )
+    action_scale = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_action_scale_qualification.yaml"
+        ).read_text()
+    )
+
+    assert "action_scale" not in extension["environment"]
+    assert action_scale["environment"]["action_scale"] == 0.5
+    action_environment = dict(action_scale["environment"])
+    action_environment.pop("action_scale")
+    assert action_environment == extension["environment"]
+
+    action_reward = dict(action_scale["reward"])
+    extension_reward = dict(extension["reward"])
+    action_reward.pop("profile")
+    extension_reward.pop("profile")
+    assert action_reward == extension_reward
+    assert action_scale["ppo"] == extension["ppo"]

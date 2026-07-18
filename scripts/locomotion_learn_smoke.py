@@ -44,6 +44,7 @@ def _make_env(
         randomize_reset = environment["randomized_reset"]
     return Go2Z1LocomotionEnv(
         ctrl_dt=environment["control_timestep"],
+        action_scale=environment.get("action_scale", 0.25),
         foot_condim=environment["foot_condim"],
         bound_observations=environment["bounded_observations"],
         command_x_range=environment["command_x_range"],
@@ -104,6 +105,8 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
         action_square_total = jnp.zeros(())
         leg_action_square_total = jnp.zeros(())
         arm_action_square_total = jnp.zeros(())
+        saturated_action_total = jnp.zeros(())
+        saturated_leg_action_total = jnp.zeros(())
         for _ in range(n_steps):
             actions = action_fn(state.obs)
             state = step_fn(state, actions)
@@ -123,6 +126,10 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             action_square_total += jnp.mean(actions * actions)
             leg_action_square_total += jnp.mean(actions[:, :12] ** 2)
             arm_action_square_total += jnp.mean(actions[:, 12:] ** 2)
+            saturated_action_total += jnp.mean(jnp.abs(actions) >= 0.95)
+            saturated_leg_action_total += jnp.mean(
+                jnp.abs(actions[:, :12]) >= 0.95
+            )
         results[name] = {
             "mean_reward": float(reward_total / n_steps),
             "mean_forward_velocity": float(forward_velocity_total / n_steps),
@@ -134,6 +141,12 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             "action_rms": float(jnp.sqrt(action_square_total / n_steps)),
             "leg_action_rms": float(jnp.sqrt(leg_action_square_total / n_steps)),
             "arm_action_rms": float(jnp.sqrt(arm_action_square_total / n_steps)),
+            "action_saturation_fraction": float(
+                saturated_action_total / n_steps
+            ),
+            "leg_action_saturation_fraction": float(
+                saturated_leg_action_total / n_steps
+            ),
             "done_count": int(done_count),
             "illegal_contact_count": int(illegal_contact_count),
             "nonfinite_state_count": int(nonfinite_state_count),

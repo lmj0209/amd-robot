@@ -22,6 +22,9 @@ and RGC system fingerprint.
   continuation of the faster v13 session at its original `0.2-0.6 m/s`
   command range. It tests whether more on-objective training improves the
   measured `0.4 m/s` gait before committing a larger budget.
+- `locomotion_stage1_action_scale_qualification.yaml`: a fresh-policy
+  qualification that changes the leg residual scale from `0.25` to the
+  official Go1 task's `0.5` while keeping the v13 reward and commands.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.
