@@ -195,3 +195,32 @@ def test_pose_qualification_changes_only_the_moving_pose_reward() -> None:
     pose_reward.pop("moving_pose_multiplier")
     action_reward.pop("profile")
     assert pose_reward == action_reward
+
+
+def test_mid_pose_qualification_changes_only_the_multiplier() -> None:
+    aggressive = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_pose_qualification.yaml"
+        ).read_text()
+    )
+    mid = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_pose_mid_qualification.yaml"
+        ).read_text()
+    )
+
+    assert aggressive["reward"]["moving_pose_multiplier"] == 0.2
+    assert mid["reward"]["moving_pose_multiplier"] == 0.6
+    for section in ("environment", "ppo", "manual_evaluation", "rocm_guardrails"):
+        assert mid[section] == aggressive[section]
+
+    aggressive_reward = dict(aggressive["reward"])
+    mid_reward = dict(mid["reward"])
+    for key in ("profile", "moving_pose_multiplier"):
+        aggressive_reward.pop(key)
+        mid_reward.pop(key)
+    assert mid_reward == aggressive_reward
