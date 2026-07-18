@@ -56,6 +56,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         tracking_linear_velocity_scale: float = 1.0,
         tracking_angular_velocity_scale: float = 0.5,
         pose_scale: float = 0.5,
+        moving_pose_multiplier: float = 1.0,
         vertical_velocity_cost_scale: float = 0.5,
         angular_velocity_xy_cost_scale: float = 0.05,
         orientation_cost_scale: float = 2.0,
@@ -82,6 +83,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             raise ValueError("command_override must contain [vx, vy, yaw_rate]")
         if tracking_sigma <= 0.0 or max_foot_height <= 0.0:
             raise ValueError("tracking_sigma and max_foot_height must be positive")
+        if not 0.0 <= moving_pose_multiplier <= 1.0:
+            raise ValueError("moving_pose_multiplier must be in [0, 1]")
         if workspace_limit <= 0.0:
             raise ValueError("workspace_limit must be positive")
 
@@ -94,6 +97,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         )
         self._randomize_reset = bool(randomize_reset)
         self._tracking_sigma = float(tracking_sigma)
+        self._moving_pose_multiplier = float(moving_pose_multiplier)
         self._reward_scales = {
             "tracking_linear_velocity": float(tracking_linear_velocity_scale),
             "tracking_angular_velocity": float(tracking_angular_velocity_scale),
@@ -411,10 +415,16 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         foot_height = data.site_xpos[self._foot_site_ids, -1]
         moving = command_norm > 0.01
         swing_height_error = swing_peak / self._max_foot_height - 1.0
+        pose = jnp.exp(-jnp.sum(jnp.square(leg_position_error) * pose_weight))
+        pose_multiplier = jnp.where(
+            moving,
+            self._moving_pose_multiplier,
+            1.0,
+        )
         return {
             "tracking_linear_velocity": jnp.exp(-linear_error / self._tracking_sigma),
             "tracking_angular_velocity": jnp.exp(-angular_error / self._tracking_sigma),
-            "pose": jnp.exp(-jnp.sum(jnp.square(leg_position_error) * pose_weight)),
+            "pose": pose * pose_multiplier,
             "vertical_velocity": jnp.square(local_linvel[2]),
             "angular_velocity_xy": jnp.sum(jnp.square(local_angvel[:2])),
             "orientation": jnp.sum(jnp.square(projected_gravity[:2])),

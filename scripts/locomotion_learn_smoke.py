@@ -56,6 +56,7 @@ def _make_env(
         tracking_linear_velocity_scale=reward["tracking_linear_velocity_scale"],
         tracking_angular_velocity_scale=reward["tracking_angular_velocity_scale"],
         pose_scale=reward["pose_scale"],
+        moving_pose_multiplier=reward.get("moving_pose_multiplier", 1.0),
         vertical_velocity_cost_scale=reward["vertical_velocity_cost_scale"],
         angular_velocity_xy_cost_scale=reward["angular_velocity_xy_cost_scale"],
         orientation_cost_scale=reward["orientation_cost_scale"],

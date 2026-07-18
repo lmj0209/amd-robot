@@ -165,3 +165,33 @@ def test_action_scale_qualification_changes_only_the_control_range() -> None:
     extension_reward.pop("profile")
     assert action_reward == extension_reward
     assert action_scale["ppo"] == extension["ppo"]
+
+
+def test_pose_qualification_changes_only_the_moving_pose_reward() -> None:
+    action_scale = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_action_scale_qualification.yaml"
+        ).read_text()
+    )
+    pose = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_pose_qualification.yaml"
+        ).read_text()
+    )
+
+    assert pose["reward"]["moving_pose_multiplier"] == 0.2
+    assert pose["environment"] == action_scale["environment"]
+    assert pose["ppo"] == action_scale["ppo"]
+    assert pose["manual_evaluation"] == action_scale["manual_evaluation"]
+    assert pose["rocm_guardrails"] == action_scale["rocm_guardrails"]
+
+    pose_reward = dict(pose["reward"])
+    action_reward = dict(action_scale["reward"])
+    pose_reward.pop("profile")
+    pose_reward.pop("moving_pose_multiplier")
+    action_reward.pop("profile")
+    assert pose_reward == action_reward
