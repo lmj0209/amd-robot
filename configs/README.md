@@ -15,6 +15,9 @@ and RGC system fingerprint.
 - `locomotion_stage1_low_speed.yaml`: the first `0.1 m/s` qualification slice
   of the staged `0.1 -> 0.2 -> 0.4 m/s` command curriculum. It resumes the
   complete accepted v14 training session.
+- `locomotion_stage1_low_speed_sensitive.yaml`: the second `0.1 m/s`
+  qualification. It narrows the bounded tracking kernel after the first slice
+  showed that standing still already saturated the broad tracking reward.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.

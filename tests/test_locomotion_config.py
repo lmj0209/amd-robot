@@ -72,3 +72,35 @@ def test_low_speed_qualification_preserves_safe_v14_settings() -> None:
     for key, value in current["reward"].items():
         if key != "profile":
             assert low_speed["reward"][key] == value
+
+
+def test_sensitive_low_speed_qualification_changes_only_the_intended_knobs() -> None:
+    first = yaml.safe_load(
+        (REPO_ROOT / "configs" / "locomotion_stage1_low_speed.yaml").read_text()
+    )
+    sensitive = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_low_speed_sensitive.yaml"
+        ).read_text()
+    )
+
+    assert sensitive["reward"]["tracking_sigma"] == 0.025
+    assert sensitive["ppo"]["learning_rate"] == 0.00001
+    assert sensitive["ppo"]["desired_kl"] == 0.005
+    assert sensitive["environment"] == first["environment"]
+    assert sensitive["manual_evaluation"] == first["manual_evaluation"]
+    assert sensitive["rocm_guardrails"] == first["rocm_guardrails"]
+
+    for section in ("reward", "ppo"):
+        first_values = dict(first[section])
+        sensitive_values = dict(sensitive[section])
+        for key in (
+            ("profile", "tracking_sigma")
+            if section == "reward"
+            else ("learning_rate", "desired_kl")
+        ):
+            first_values.pop(key)
+            sensitive_values.pop(key)
+        assert sensitive_values == first_values
