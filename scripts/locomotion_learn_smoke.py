@@ -45,6 +45,7 @@ def _make_env(
     return Go2Z1LocomotionEnv(
         ctrl_dt=environment["control_timestep"],
         action_scale=environment.get("action_scale", 0.25),
+        leg_kp=environment.get("leg_kp"),
         foot_condim=environment["foot_condim"],
         bound_observations=environment["bounded_observations"],
         command_x_range=environment["command_x_range"],

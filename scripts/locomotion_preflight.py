@@ -30,6 +30,7 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20260718)
     parser.add_argument("--action-seed", type=int, default=9)
     parser.add_argument("--action-scale", type=float, default=0.25)
+    parser.add_argument("--leg-kp", type=float)
     parser.add_argument(
         "--zero-actions",
         action="store_true",
@@ -46,12 +47,23 @@ def main() -> int:
         help="Include the Brax episode/autoreset wrapper used during PPO.",
     )
     args = parser.parse_args()
-    if args.num_envs <= 0 or args.num_steps <= 0 or args.action_scale <= 0.0:
-        parser.error("--num-envs, --num-steps, and --action-scale must be positive")
+    if (
+        args.num_envs <= 0
+        or args.num_steps <= 0
+        or args.action_scale <= 0.0
+        or (args.leg_kp is not None and args.leg_kp <= 0.0)
+    ):
+        parser.error(
+            "--num-envs, --num-steps, --action-scale, and --leg-kp "
+            "must be positive"
+        )
     if args.zero_actions and args.resample_actions:
         parser.error("--zero-actions and --resample-actions are mutually exclusive")
 
-    env = Go2Z1LocomotionEnv(action_scale=args.action_scale)
+    env = Go2Z1LocomotionEnv(
+        action_scale=args.action_scale,
+        leg_kp=args.leg_kp,
+    )
     rollout_env = env
     if args.training_wrapper:
         from mujoco_playground import wrapper
@@ -148,6 +160,7 @@ def main() -> int:
         "control_timestep": env.dt,
         "physics_substeps": env.n_substeps,
         "action_scale": args.action_scale,
+        "leg_kp": env._leg_kp,
         "done_count": done_count,
         "illegal_contact_count": illegal_contact_count,
         "nonfinite_state_count": nonfinite_state_count,

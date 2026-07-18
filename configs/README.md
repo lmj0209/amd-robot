@@ -24,9 +24,10 @@ and RGC system fingerprint.
   measured `0.4 m/s` gait before committing a larger budget.
 - `locomotion_stage1_action_scale_qualification.yaml`: a fresh-policy
   qualification that changes the leg residual scale from `0.25` to the
-  measured-safe `0.3` while keeping the v13 reward and commands. The official
-  Go1 value `0.5` and an intermediate `0.35` failed this robot's random-action
-  finite-state gate.
+  measured-safe `0.3` while reducing leg Kp from `50` to `40`, keeping the
+  approximate peak residual PD force unchanged. The official Go1 value `0.5`
+  and an intermediate `0.35` failed this robot's random-action finite-state
+  gate.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.

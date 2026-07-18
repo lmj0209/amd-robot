@@ -153,8 +153,10 @@ def test_action_scale_qualification_changes_only_the_control_range() -> None:
 
     assert "action_scale" not in extension["environment"]
     assert action_scale["environment"]["action_scale"] == 0.3
+    assert action_scale["environment"]["leg_kp"] == 40.0
     action_environment = dict(action_scale["environment"])
     action_environment.pop("action_scale")
+    action_environment.pop("leg_kp")
     assert action_environment == extension["environment"]
 
     action_reward = dict(action_scale["reward"])

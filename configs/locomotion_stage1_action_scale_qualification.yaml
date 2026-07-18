@@ -6,6 +6,7 @@ seed: 0
 environment:
   control_timestep: 0.01
   action_scale: 0.3
+  leg_kp: 40.0
   foot_condim: 6
   bounded_observations: true
   randomized_reset: true
@@ -14,7 +15,7 @@ environment:
   workspace_limit: 5.0
 
 reward:
-  profile: forward_gait_v13_action_scale_v2
+  profile: forward_gait_v13_action_scale_v3
   tracking_sigma: 0.25
   tracking_linear_velocity_scale: 2.0
   tracking_angular_velocity_scale: 0.5
