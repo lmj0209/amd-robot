@@ -11,9 +11,9 @@ randomized initial states.
 
 Run on RGC::
 
-    # Conservative gfx1100 compiler smoke (one small training update).
+    # gfx1100 host-loop training: compile a two-step epoch once, then reuse it.
     /workspace/.venv/bin/python scripts/standing_learn_smoke.py \
-      --foot-condim 1 --num-timesteps 512
+      --foot-condim 1 --num-timesteps 5120
 
     # CPU learning oracle.
     JAX_PLATFORMS=cpu /workspace/.venv/bin/python \
@@ -21,9 +21,11 @@ Run on RGC::
       --num-timesteps 5120 --learning-rate-schedule ADAPTIVE_KL \
       --max-grad-norm 1
 
-Large single-call GPU training scans are intentionally unsupported by this
-smoke. ``--params-in``/``--params-out`` can test fresh-process parameter
-continuation, but Brax optimizer state is not preserved across those calls.
+The smoke maps Brax's ``num_evals`` iterations to a host loop while disabling
+evaluation. The complete Brax ``TrainingState`` remains live across calls, and
+each compiled ``training_epoch`` scan is bounded by
+``--training-steps-per-host-call``. ``--params-in``/``--params-out`` still only
+save inference parameters and are not resumable optimizer checkpoints.
 """
 
 from __future__ import annotations
@@ -35,11 +37,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-import jax
-import jax.numpy as jnp
-from mujoco import mjx
+import jax  # noqa: E402
+import jax.numpy as jnp  # noqa: E402
+from mujoco import mjx  # noqa: E402
 
-from amd_robo.envs.go2_z1 import Go2Z1Env
+from amd_robo.envs.go2_z1 import Go2Z1Env  # noqa: E402
+from amd_robo.training.host_loop import plan_brax_host_loop  # noqa: E402
 
 
 class Go2Z1StandingEnv(Go2Z1Env):
@@ -80,9 +83,7 @@ class Go2Z1StandingEnv(Go2Z1Env):
         )
         data = mjx.forward(self.mjx_model, data)
         info = {**state.info, "rng": rng}
-        obs = self._observation(
-            data, state.info["last_action"], state.info["phase"]
-        )
+        obs = self._observation(data, state.info["last_action"], state.info["phase"])
         return state.replace(data=data, obs=obs, info=info)
 
     def step(self, state, action):
@@ -94,24 +95,15 @@ class Go2Z1StandingEnv(Go2Z1Env):
         w, x, y, z = data.qpos[3], data.qpos[4], data.qpos[5], data.qpos[6]
         rz = w * w - x * x - y * y + z * z
         upright = (
-            jnp.clip(rz, 0.0, 1.0)
-            if self._sanitize_reward
-            else jnp.maximum(0.0, rz)
+            jnp.clip(rz, 0.0, 1.0) if self._sanitize_reward else jnp.maximum(0.0, rz)
         )
         dz = data.qpos[2] - self._home_qpos[2]
         height = jnp.maximum(0.0, 1.0 - (dz * dz) / 0.02)
-        reward = (
-            upright
-            + height
-            + 0.1
-            - 0.001 * jnp.sum(last_action * last_action)
-        )
+        reward = upright + height + 0.1 - 0.001 * jnp.sum(last_action * last_action)
         if self._sanitize_reward:
             # AutoReset replaces terminal data and observations, but preserves
             # terminal reward.  Do not leak a contact-divergence NaN into PPO.
-            reward = jnp.nan_to_num(
-                reward, nan=0.0, posinf=0.0, neginf=0.0
-            )
+            reward = jnp.nan_to_num(reward, nan=0.0, posinf=0.0, neginf=0.0)
         return reward
 
 
@@ -123,9 +115,7 @@ def _sequential_eval(env, action_fns, n_envs, n_steps, reset_key):
     """
     from mujoco_playground import wrapper
 
-    wrapped = wrapper.wrap_for_brax_training(
-        env, episode_length=64, action_repeat=1
-    )
+    wrapped = wrapper.wrap_for_brax_training(env, episode_length=64, action_repeat=1)
     reset_fn = jax.jit(wrapped.reset)
     step_fn = jax.jit(wrapped.step)
     reset_keys = jax.random.split(reset_key, n_envs)
@@ -145,9 +135,7 @@ def _random_rollout_preflight(env, n_envs, n_steps, reset_key):
     """Check the exact wrapped transition values consumed by Brax PPO."""
     from mujoco_playground import wrapper
 
-    wrapped = wrapper.wrap_for_brax_training(
-        env, episode_length=64, action_repeat=1
-    )
+    wrapped = wrapper.wrap_for_brax_training(env, episode_length=64, action_repeat=1)
     state = jax.jit(wrapped.reset)(jax.random.split(reset_key, n_envs))
     step_fn = jax.jit(wrapped.step)
     action_key = reset_key
@@ -168,9 +156,7 @@ def _random_rollout_preflight(env, n_envs, n_steps, reset_key):
         nonfinite_rewards += jnp.sum(~jnp.isfinite(state.reward))
         nonfinite_observations += jnp.sum(~jnp.isfinite(state.obs))
         done_count += jnp.sum(state.done.astype(jnp.int32))
-        finite_obs = jnp.nan_to_num(
-            state.obs, nan=0.0, posinf=0.0, neginf=0.0
-        )
+        finite_obs = jnp.nan_to_num(state.obs, nan=0.0, posinf=0.0, neginf=0.0)
         max_abs_observation = jnp.maximum(
             max_abs_observation, jnp.max(jnp.abs(finite_obs))
         )
@@ -183,8 +169,7 @@ def _random_rollout_preflight(env, n_envs, n_steps, reset_key):
         "max_abs_observation": float(max_abs_observation),
     }
     print(
-        "PREFLIGHT "
-        + " ".join(f"{key}={value}" for key, value in result.items()),
+        "PREFLIGHT " + " ".join(f"{key}={value}" for key, value in result.items()),
         flush=True,
     )
     return result
@@ -193,6 +178,12 @@ def _random_rollout_preflight(env, n_envs, n_steps, reset_key):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--num-timesteps", type=int, default=512)
+    parser.add_argument(
+        "--training-steps-per-host-call",
+        type=int,
+        default=2,
+        help="Maximum Brax training steps in each compiled host-loop call.",
+    )
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--max-grad-norm", type=float, default=0.0)
     parser.add_argument("--foot-condim", type=int, choices=(1, 3, 4, 6))
@@ -241,12 +232,20 @@ def main() -> int:
     num_envs, batch_size, num_minibatches = 64, 16, 4
     unroll_length = 4
     num_timesteps = args.num_timesteps
-    max_grad_norm = (
-        args.max_grad_norm if args.max_grad_norm > 0.0 else None
+    env_steps_per_training_step = batch_size * unroll_length * num_minibatches
+    host_loop = plan_brax_host_loop(
+        num_timesteps=num_timesteps,
+        env_steps_per_training_step=env_steps_per_training_step,
+        max_training_steps_per_call=args.training_steps_per_host_call,
     )
+    max_grad_norm = args.max_grad_norm if args.max_grad_norm > 0.0 else None
     print(
-        f"standing smoke: num_envs={num_envs} unroll={unroll_length} batch={batch_size} "
+        f"standing smoke: num_envs={num_envs} unroll={unroll_length} "
+        f"batch={batch_size} "
         f"mb={num_minibatches} num_timesteps={num_timesteps} "
+        f"actual_timesteps={host_loop.actual_timesteps} "
+        f"host_calls={host_loop.host_calls} "
+        f"training_scan={host_loop.training_steps_per_call} "
         f"foot_condim={args.foot_condim or 6} learning_rate={args.learning_rate} "
         f"max_grad_norm={max_grad_norm} "
         f"safe_reward={not args.unsafe_reward} "
@@ -272,9 +271,7 @@ def main() -> int:
             flush=True,
         )
 
-    restore_params = (
-        brax_model.load_params(args.params_in) if args.params_in else None
-    )
+    restore_params = brax_model.load_params(args.params_in) if args.params_in else None
     if args.params_in:
         print(f"PARAMS_LOADED path={args.params_in}", flush=True)
     metrics = {}
@@ -299,7 +296,9 @@ def main() -> int:
         num_updates_per_batch=2,
         max_grad_norm=max_grad_norm,
         normalize_observations=True,
-        num_evals=1,
+        # With run_evals=False, Brax uses these iterations as a Python host
+        # loop and carries the full TrainingState between compiled epochs.
+        num_evals=host_loop.brax_num_evals,
         num_eval_envs=4,
         run_evals=False,
         progress_fn=progress,
@@ -321,7 +320,10 @@ def main() -> int:
     # baseline, same randomized initial states and autoreset behavior.
     policy = make_policy(params, deterministic=True)
     trained_act = jax.jit(lambda obs: policy(obs, jax.random.PRNGKey(0))[0])
-    zero_act = lambda obs: jnp.zeros((obs.shape[0], env.action_size))
+
+    def zero_act(obs):
+        return jnp.zeros((obs.shape[0], env.action_size))
+
     eval_key = jax.random.PRNGKey(777)
     n_eval_envs, n_eval_steps = 64, 50
     print("evaluating (sequential, no scan)...", flush=True)
