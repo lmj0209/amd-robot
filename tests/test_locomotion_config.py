@@ -338,6 +338,49 @@ def test_push_position_x_phase_sync_changes_only_align_phase_timing() -> None:
     assert phase_sync_reward == align85_reward
 
 
+def test_push_position_x_residual050_changes_only_action_scale() -> None:
+    align85 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_qualification.yaml"
+        ).read_text()
+    )
+    residual050 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_residual050_qualification.yaml"
+        ).read_text()
+    )
+
+    assert residual050["status"] == (
+        "push_stage2_position_x_1cm_align85_residual050_qualification"
+    )
+    assert residual050["environment"]["action_scale"] == 0.05
+    for section in (
+        "push",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert residual050[section] == align85[section]
+
+    align85_environment = dict(align85["environment"])
+    residual050_environment = dict(residual050["environment"])
+    align85_environment.pop("action_scale")
+    residual050_environment.pop("action_scale")
+    assert residual050_environment == align85_environment
+
+    align85_reward = dict(align85["reward"])
+    residual050_reward = dict(residual050["reward"])
+    align85_reward.pop("profile")
+    residual050_reward.pop("profile")
+    assert residual050_reward == align85_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 
