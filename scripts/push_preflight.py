@@ -25,15 +25,20 @@ def main() -> int:
     parser.add_argument("--num-steps", type=int, default=10)
     parser.add_argument("--seed", type=int, default=20260719)
     parser.add_argument("--approach-stop-distance", type=float)
+    parser.add_argument("--solver-iterations", type=int)
     args = parser.parse_args()
     if args.num_envs <= 0 or args.num_steps <= 0:
         parser.error("num-envs and num-steps must be positive")
     if args.approach_stop_distance is not None and args.approach_stop_distance <= 0.0:
         parser.error("approach-stop-distance must be positive")
+    if args.solver_iterations is not None and args.solver_iterations <= 0:
+        parser.error("solver-iterations must be positive")
 
     env_kwargs = {}
     if args.approach_stop_distance is not None:
         env_kwargs["approach_stop_distance"] = args.approach_stop_distance
+    if args.solver_iterations is not None:
+        env_kwargs["solver_iterations"] = args.solver_iterations
     env = Go2Z1PushEnv(**env_kwargs)
     reset_fn = jax.jit(jax.vmap(env.reset))
     step_fn = jax.jit(jax.vmap(env.step))

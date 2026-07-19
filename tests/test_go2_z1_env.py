@@ -32,6 +32,12 @@ def test_leg_pd_override_preserves_the_actuator_contract() -> None:
     assert env.mj_model.actuator_gainprm[12, 0] == 1000.0
 
 
+def test_solver_iterations_override() -> None:
+    env = Go2Z1Env(solver_iterations=8)
+
+    assert env.mj_model.opt.iterations == 8
+
+
 def test_foot_condim_override() -> None:
     env = Go2Z1Env(foot_condim=1)
     for name in FOOT_GEOM_NAMES:

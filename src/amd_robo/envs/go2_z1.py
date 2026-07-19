@@ -62,6 +62,7 @@ class Go2Z1Env(MjxEnv):
         action_scale: float = 0.25,
         leg_kp: float | None = None,
         leg_kd: float | None = None,
+        solver_iterations: int | None = None,
         home_keyframe: str | None = "home",
         tilt_limit_deg: float = 60.0,
         mask_arm: bool = True,
@@ -70,6 +71,10 @@ class Go2Z1Env(MjxEnv):
     ) -> None:
         self._xml_path = str(xml_path)
         self._mj_model = mujoco.MjModel.from_xml_path(self._xml_path)
+        if solver_iterations is not None:
+            if solver_iterations <= 0:
+                raise ValueError("solver iterations must be positive")
+            self._mj_model.opt.iterations = solver_iterations
         if leg_kp is not None:
             if leg_kp <= 0.0:
                 raise ValueError("leg_kp must be positive")
