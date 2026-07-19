@@ -24,6 +24,10 @@ GO2_HOME_LEG_ANGLES = jnp.asarray(
 GO2_LEG_CTRL_MIN = jnp.asarray([-0.9472, -1.4, -2.6227])
 GO2_LEG_CTRL_MAX = jnp.asarray([0.9472, 2.5, -0.84776])
 
+_CRAWL_SEQUENCE = jnp.asarray([0, 3, 1, 2], dtype=jnp.int32)
+_CRAWL_PHASE_OFFSETS = jnp.asarray([0.0, 0.5, 0.75, 0.25])
+_CRAWL_FORE_AFT_SIGNS = jnp.asarray([1.0, 1.0, -1.0, -1.0])
+
 _GO2_EFFECTIVE_CALF_LENGTH = math.hypot(
     GO2_CALF_LENGTH, GO2_FOOT_X_OFFSET
 )
@@ -115,3 +119,106 @@ def go2_leg_inverse_kinematics(
 
 
 GO2_HOME_FOOT_POSITIONS = go2_leg_forward_kinematics(GO2_HOME_LEG_ANGLES)
+
+
+def _smoothstep(value: jax.Array) -> jax.Array:
+    value = jnp.clip(value, 0.0, 1.0)
+    return value * value * (3.0 - 2.0 * value)
+
+
+def go2_foot_space_crawl_targets(
+    gait_phase: jax.Array,
+    *,
+    step_length: float,
+    foot_clearance: float,
+    body_shift_x: float,
+    body_shift_y: float,
+    shift_end_fraction: float,
+    lift_start_fraction: float,
+    lift_end_fraction: float,
+) -> jax.Array:
+    """Build FL-RR-FR-RL foot targets relative to the four hip joints."""
+
+    cycle_position = jnp.mod(gait_phase, 2.0 * jnp.pi) / (2.0 * jnp.pi)
+    quarter_position = 4.0 * cycle_position
+    slot = jnp.floor(quarter_position).astype(jnp.int32)
+    quarter_phase = quarter_position - jnp.floor(quarter_position)
+    active_leg = _CRAWL_SEQUENCE[slot]
+    previous_leg = _CRAWL_SEQUENCE[jnp.mod(slot - 1, 4)]
+
+    shift_blend = _smoothstep(quarter_phase / shift_end_fraction)
+    previous_shift_x = _CRAWL_FORE_AFT_SIGNS[previous_leg] * body_shift_x
+    active_shift_x = _CRAWL_FORE_AFT_SIGNS[active_leg] * body_shift_x
+    previous_shift_y = GO2_SIDE_SIGNS[previous_leg] * body_shift_y
+    active_shift_y = GO2_SIDE_SIGNS[active_leg] * body_shift_y
+    common_shift_x = (
+        (1.0 - shift_blend) * previous_shift_x
+        + shift_blend * active_shift_x
+    )
+    common_shift_y = (
+        (1.0 - shift_blend) * previous_shift_y
+        + shift_blend * active_shift_y
+    )
+
+    leg_phase = jnp.mod(cycle_position - _CRAWL_PHASE_OFFSETS, 1.0)
+    swing_progress = _smoothstep(leg_phase / 0.25)
+    stance_progress = _smoothstep((leg_phase - 0.25) / 0.75)
+    half_step = 0.5 * step_length
+    foot_x = jnp.where(
+        leg_phase < 0.25,
+        -half_step + step_length * swing_progress,
+        half_step - step_length * stance_progress,
+    )
+
+    lift_duration = lift_end_fraction - lift_start_fraction
+    lift_progress = jnp.clip(
+        (quarter_phase - lift_start_fraction) / lift_duration,
+        0.0,
+        1.0,
+    )
+    lift_window = (quarter_phase >= lift_start_fraction) & (
+        quarter_phase < lift_end_fraction
+    )
+    foot_z = (
+        foot_clearance
+        * jnp.square(jnp.sin(jnp.pi * lift_progress))
+        * lift_window.astype(jnp.float32)
+        * (jnp.arange(4) == active_leg).astype(jnp.float32)
+    )
+    offsets = jnp.stack(
+        [
+            foot_x + common_shift_x,
+            jnp.full(4, common_shift_y),
+            foot_z,
+        ],
+        axis=-1,
+    )
+    return (GO2_HOME_FOOT_POSITIONS + offsets).astype(jnp.float32)
+
+
+def go2_foot_space_crawl_reference(
+    gait_phase: jax.Array,
+    *,
+    step_length: float,
+    foot_clearance: float,
+    body_shift_x: float,
+    body_shift_y: float,
+    shift_end_fraction: float,
+    lift_start_fraction: float,
+    lift_end_fraction: float,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Return joint deltas, foot targets, and per-leg IK reachability."""
+
+    targets = go2_foot_space_crawl_targets(
+        gait_phase,
+        step_length=step_length,
+        foot_clearance=foot_clearance,
+        body_shift_x=body_shift_x,
+        body_shift_y=body_shift_y,
+        shift_end_fraction=shift_end_fraction,
+        lift_start_fraction=lift_start_fraction,
+        lift_end_fraction=lift_end_fraction,
+    )
+    angles, reachable = go2_leg_inverse_kinematics(targets)
+    reference = (angles - GO2_HOME_LEG_ANGLES).reshape(12)
+    return reference.astype(jnp.float32), targets, reachable

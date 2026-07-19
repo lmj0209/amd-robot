@@ -45,6 +45,11 @@ def main() -> int:
     parser.add_argument("--crawl-shift-end-fraction", type=float, default=0.3)
     parser.add_argument("--crawl-lift-start-fraction", type=float, default=0.3)
     parser.add_argument("--crawl-lift-end-fraction", type=float, default=0.8)
+    parser.add_argument("--crawl-foot-space", action="store_true")
+    parser.add_argument("--crawl-foot-step-length", type=float, default=0.08)
+    parser.add_argument("--crawl-foot-clearance", type=float, default=0.04)
+    parser.add_argument("--crawl-body-shift-x", type=float, default=0.02)
+    parser.add_argument("--crawl-body-shift-y", type=float, default=0.02)
     parser.add_argument("--crawl-min-air-time", type=float, default=0.07)
     parser.add_argument("--crawl-pose-reference", action="store_true")
     parser.add_argument("--command-x", type=float)
@@ -80,6 +85,10 @@ def main() -> int:
         or args.crawl_shift <= 0.0
         or args.crawl_lift <= 0.0
         or args.crawl_min_air_time <= 0.0
+        or args.crawl_foot_step_length <= 0.0
+        or args.crawl_foot_clearance <= 0.0
+        or args.crawl_body_shift_x < 0.0
+        or args.crawl_body_shift_y < 0.0
         or not (
             0.0
             < args.crawl_shift_end_fraction
@@ -106,6 +115,8 @@ def main() -> int:
         parser.error("--crawl-reference requires --gait-cycle-time")
     if args.crawl_pose_reference and not args.crawl_reference:
         parser.error("--crawl-pose-reference requires --crawl-reference")
+    if args.crawl_foot_space and not args.crawl_reference:
+        parser.error("--crawl-foot-space requires --crawl-reference")
     if args.crawl_reference and (
         args.trot_contact_scale > 0.0
         or args.trot_swing_height_cost_scale > 0.0
@@ -132,6 +143,11 @@ def main() -> int:
         crawl_shift_end_fraction=args.crawl_shift_end_fraction,
         crawl_lift_start_fraction=args.crawl_lift_start_fraction,
         crawl_lift_end_fraction=args.crawl_lift_end_fraction,
+        crawl_foot_space_enabled=args.crawl_foot_space,
+        crawl_foot_step_length=args.crawl_foot_step_length,
+        crawl_foot_clearance=args.crawl_foot_clearance,
+        crawl_body_shift_x=args.crawl_body_shift_x,
+        crawl_body_shift_y=args.crawl_body_shift_y,
         crawl_min_air_time=args.crawl_min_air_time,
         crawl_pose_reference_enabled=args.crawl_pose_reference,
         command_override=(
@@ -189,6 +205,8 @@ def main() -> int:
     crawl_reference_error_total = jnp.zeros(())
     max_crawl_reference_error = jnp.zeros(())
     has_crawl_reference_error = "crawl_reference_error_rms" in state.metrics
+    minimum_crawl_ik_reachable = jnp.ones(())
+    has_crawl_ik_reachable = "crawl_ik_reachable_fraction" in state.metrics
     previous_contact = None
     liftoff_count = jnp.zeros(4, dtype=jnp.int32)
     touchdown_count = jnp.zeros(4, dtype=jnp.int32)
@@ -260,6 +278,11 @@ def main() -> int:
                 max_crawl_reference_error,
                 jnp.max(crawl_reference_error),
             )
+        if has_crawl_ik_reachable:
+            minimum_crawl_ik_reachable = jnp.minimum(
+                minimum_crawl_ik_reachable,
+                state.metrics["crawl_ik_reachable_fraction"],
+            )
         foot_contact = state.info["last_contact"]
         if previous_contact is not None:
             liftoff_count += jnp.sum(
@@ -315,6 +338,7 @@ def main() -> int:
             max_swing_peak,
             crawl_reference_error_total,
             max_crawl_reference_error,
+            minimum_crawl_ik_reachable,
         )
     )
 
@@ -335,6 +359,11 @@ def main() -> int:
         "crawl_shift_end_fraction": args.crawl_shift_end_fraction,
         "crawl_lift_start_fraction": args.crawl_lift_start_fraction,
         "crawl_lift_end_fraction": args.crawl_lift_end_fraction,
+        "crawl_foot_space": args.crawl_foot_space,
+        "crawl_foot_step_length": args.crawl_foot_step_length,
+        "crawl_foot_clearance": args.crawl_foot_clearance,
+        "crawl_body_shift_x": args.crawl_body_shift_x,
+        "crawl_body_shift_y": args.crawl_body_shift_y,
         "crawl_min_air_time": args.crawl_min_air_time,
         "crawl_pose_reference": args.crawl_pose_reference,
         "command_x_override": args.command_x,
@@ -400,6 +429,10 @@ def main() -> int:
         )
         report["max_crawl_reference_error_rms"] = float(
             max_crawl_reference_error
+        )
+    if has_crawl_ik_reachable:
+        report["minimum_crawl_ik_reachable_fraction"] = float(
+            minimum_crawl_ik_reachable
         )
     print(f"LOCOMOTION_PREFLIGHT {json.dumps(report, sort_keys=True)}", flush=True)
     return int(

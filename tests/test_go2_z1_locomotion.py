@@ -114,6 +114,10 @@ def test_trot_phase_alternates_diagonal_contact_targets() -> None:
             "crawl pose reference requires crawl reference",
         ),
         (
+            {"crawl_foot_space_enabled": True},
+            "foot-space crawl requires crawl reference",
+        ),
+        (
             {"crawl_stride": -0.1},
             "crawl stride must be non-negative",
         ),
@@ -230,6 +234,34 @@ def test_crawl_reference_is_disabled_for_zero_command() -> None:
     assert jnp.allclose(state.info["crawl_reference"], 0.0)
     assert jnp.allclose(state.data.qpos, env._home_qpos)
     assert jnp.allclose(state.data.ctrl, env._home_ctrl)
+
+
+def test_foot_space_crawl_is_opt_in_reachable_and_preserves_contracts() -> None:
+    env = Go2Z1LocomotionEnv(
+        command_override=(0.04, 0.0, 0.0),
+        randomize_reset=False,
+        gait_cycle_time=4.0,
+        crawl_reference_enabled=True,
+        crawl_foot_space_enabled=True,
+        crawl_foot_step_length=0.08,
+        crawl_foot_clearance=0.04,
+        crawl_body_shift_x=0.02,
+        crawl_body_shift_y=0.02,
+        crawl_pose_reference_enabled=True,
+        leg_kp=50.0,
+    )
+    state = jax.jit(env.reset)(jax.random.PRNGKey(0))
+    nxt = jax.jit(env.step)(state, jnp.zeros(env.action_size))
+    _block_tree(nxt)
+
+    assert env.action_size == 19
+    assert env.observation_size == 75
+    assert state.info["crawl_foot_targets"].shape == (4, 3)
+    assert jnp.all(state.info["crawl_ik_reachable"])
+    assert nxt.metrics["crawl_ik_reachable_fraction"] == 1.0
+    assert jnp.all(jnp.isfinite(nxt.info["crawl_reference"]))
+    assert jnp.allclose(nxt.data.ctrl[12:], env._home_ctrl[12:])
+    assert _tree_is_finite(nxt.data)
 
 
 def test_crawl_pose_reference_is_opt_in_and_retargets_pose_reward() -> None:

@@ -17,6 +17,7 @@ import mujoco
 from mujoco import mjx
 
 from amd_robo.contracts import ACTION_LAYOUT
+from amd_robo.envs.go2_kinematics import go2_foot_space_crawl_reference
 from amd_robo.envs.go2_z1 import FOOT_GEOM_NAMES, Go2Z1Env, _LEG_MASK, _rotmat
 
 FOOT_SITE_NAMES = ("FL_foot", "FR_foot", "RL_foot", "RR_foot")
@@ -88,6 +89,11 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         crawl_shift_end_fraction: float = 0.3,
         crawl_lift_start_fraction: float = 0.3,
         crawl_lift_end_fraction: float = 0.8,
+        crawl_foot_space_enabled: bool = False,
+        crawl_foot_step_length: float = 0.08,
+        crawl_foot_clearance: float = 0.04,
+        crawl_body_shift_x: float = 0.02,
+        crawl_body_shift_y: float = 0.02,
         crawl_min_air_time: float = 0.07,
         crawl_pose_reference_enabled: bool = False,
         termination_cost_scale: float = 2.0,
@@ -137,6 +143,16 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                 "crawl timing must satisfy 0 < shift end <= lift start "
                 "< lift end < 1"
             )
+        if (
+            crawl_foot_step_length <= 0.0
+            or crawl_foot_clearance <= 0.0
+            or crawl_body_shift_x < 0.0
+            or crawl_body_shift_y < 0.0
+        ):
+            raise ValueError(
+                "crawl foot step and clearance must be positive; body shifts "
+                "must be non-negative"
+            )
         if gait_cycle_time is None and (
             trot_contact_scale > 0.0
             or trot_swing_height_cost_scale > 0.0
@@ -145,6 +161,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             raise ValueError("trot reward scales require gait_cycle_time")
         if gait_cycle_time is None and crawl_reference_enabled:
             raise ValueError("crawl reference requires gait_cycle_time")
+        if crawl_foot_space_enabled and not crawl_reference_enabled:
+            raise ValueError("foot-space crawl requires crawl reference")
         if crawl_pose_reference_enabled and not crawl_reference_enabled:
             raise ValueError("crawl pose reference requires crawl reference")
         if crawl_reference_enabled and (
@@ -180,6 +198,11 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         self._crawl_shift_end_fraction = float(crawl_shift_end_fraction)
         self._crawl_lift_start_fraction = float(crawl_lift_start_fraction)
         self._crawl_lift_end_fraction = float(crawl_lift_end_fraction)
+        self._crawl_foot_space_enabled = bool(crawl_foot_space_enabled)
+        self._crawl_foot_step_length = float(crawl_foot_step_length)
+        self._crawl_foot_clearance = float(crawl_foot_clearance)
+        self._crawl_body_shift_x = float(crawl_body_shift_x)
+        self._crawl_body_shift_y = float(crawl_body_shift_y)
         self._crawl_min_air_time = float(crawl_min_air_time)
         self._crawl_pose_reference_enabled = bool(crawl_pose_reference_enabled)
         self._reward_names = self._BASE_REWARD_NAMES
@@ -317,8 +340,14 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             data = mjx.forward(self.mjx_model, data)
 
         crawl_reference = None
+        crawl_foot_targets = None
+        crawl_ik_reachable = None
         if self._crawl_reference_enabled:
             crawl_reference = self._crawl_joint_reference(gait_phase, command)
+            if self._crawl_foot_space_enabled:
+                _, crawl_foot_targets, crawl_ik_reachable = (
+                    self._crawl_foot_space_solution(gait_phase)
+                )
             data = data.replace(
                 qpos=data.qpos.at[7:19].add(crawl_reference),
                 ctrl=data.ctrl.at[:12].add(crawl_reference),
@@ -352,6 +381,9 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                     ),
                 }
             )
+            if crawl_foot_targets is not None:
+                info["crawl_foot_targets"] = crawl_foot_targets
+                info["crawl_ik_reachable"] = crawl_ik_reachable
         if self._trot_timing_enabled:
             info["feet_contact_time"] = jnp.zeros(len(FOOT_SITE_NAMES))
         metrics = {
@@ -371,6 +403,10 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             metrics["crawl_reference_rms"] = jnp.sqrt(
                 jnp.mean(jnp.square(crawl_reference))
             )
+            if crawl_ik_reachable is not None:
+                metrics["crawl_ik_reachable_fraction"] = jnp.mean(
+                    crawl_ik_reachable.astype(jnp.float32)
+                )
             if self._crawl_pose_reference_enabled:
                 reference_error = (
                     data.qpos[7:19]
@@ -409,6 +445,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         policy_action = jnp.clip(jnp.asarray(action, dtype=jnp.float32), -1.0, 1.0)
         previous_action = state.info["last_action"]
         crawl_reference = None
+        crawl_foot_targets = None
+        crawl_ik_reachable = None
         if self._crawl_reference_enabled:
             applied_action = policy_action
             if self._mask_arm:
@@ -417,6 +455,10 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                 state.info["gait_phase"],
                 state.info["command"],
             )
+            if self._crawl_foot_space_enabled:
+                _, crawl_foot_targets, crawl_ik_reachable = (
+                    self._crawl_foot_space_solution(state.info["gait_phase"])
+                )
             ctrl = self._home_ctrl + self._action_scale * applied_action
             ctrl = ctrl.at[:12].add(crawl_reference)
             ctrl = jnp.clip(ctrl, self._ctrl_min, self._ctrl_max)
@@ -529,6 +571,9 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                     "crawl_sustained_touchdown": crawl_sustained_touchdown,
                 }
             )
+            if crawl_foot_targets is not None:
+                info["crawl_foot_targets"] = crawl_foot_targets
+                info["crawl_ik_reachable"] = crawl_ik_reachable
         if current_contact_time is not None:
             info["feet_contact_time"] = current_contact_time
         metrics = {
@@ -550,6 +595,10 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             metrics["crawl_reference_rms"] = jnp.sqrt(
                 jnp.mean(jnp.square(crawl_reference))
             )
+            if crawl_ik_reachable is not None:
+                metrics["crawl_ik_reachable_fraction"] = jnp.mean(
+                    crawl_ik_reachable.astype(jnp.float32)
+                )
             if self._crawl_pose_reference_enabled:
                 reference_error = (
                     stepped.data.qpos[7:19]
@@ -759,12 +808,32 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         )
         return active_leg, swing_window
 
+    def _crawl_foot_space_solution(
+        self,
+        gait_phase: jax.Array,
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        return go2_foot_space_crawl_reference(
+            gait_phase,
+            step_length=self._crawl_foot_step_length,
+            foot_clearance=self._crawl_foot_clearance,
+            body_shift_x=self._crawl_body_shift_x,
+            body_shift_y=self._crawl_body_shift_y,
+            shift_end_fraction=self._crawl_shift_end_fraction,
+            lift_start_fraction=self._crawl_lift_start_fraction,
+            lift_end_fraction=self._crawl_lift_end_fraction,
+        )
+
     def _crawl_joint_reference(
         self,
         gait_phase: jax.Array,
         command: jax.Array,
     ) -> jax.Array:
         """Four-beat FL-RR-FR-RL crawl with a three-foot support target."""
+
+        if self._crawl_foot_space_enabled:
+            reference, _, _ = self._crawl_foot_space_solution(gait_phase)
+            moving = (jnp.linalg.norm(command) > 0.01).astype(jnp.float32)
+            return (reference * moving).astype(jnp.float32)
 
         cycle_position = jnp.mod(gait_phase, 2.0 * jnp.pi) / (2.0 * jnp.pi)
         quarter_position = 4.0 * cycle_position
