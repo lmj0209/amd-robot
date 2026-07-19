@@ -92,6 +92,11 @@ and RGC system fingerprint.
   changes only the policy residual range from +/-0.3 to +/-0.1 radians (plus
   the run label), leaving the reference, command, reward, PPO, evaluation, and
   ROCm contracts unchanged.
+- `locomotion_stage1_crawl_low_speed_qualification.yaml`: fresh-policy crawl
+  curriculum after the safe residual policy still saturated against the
+  0.4 m/s evaluation command and suppressed the front-foot swings. It changes
+  only the sampled command range from 0.2-0.6 to 0.02-0.06 m/s and the fixed
+  evaluation command from 0.4 to 0.04 m/s (plus the run label).
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.

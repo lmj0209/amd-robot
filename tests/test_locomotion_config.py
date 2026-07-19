@@ -666,6 +666,44 @@ def test_crawl_residual_qualification_changes_only_action_scale() -> None:
     assert residual_reward == reference_reward
 
 
+def test_crawl_low_speed_changes_only_command_curriculum() -> None:
+    residual = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_residual_qualification.yaml"
+        ).read_text()
+    )
+    low_speed = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_low_speed_qualification.yaml"
+        ).read_text()
+    )
+
+    assert low_speed["environment"]["command_x_range"] == [0.02, 0.06]
+    assert low_speed["manual_evaluation"]["fixed_command"] == [0.04, 0.0, 0.0]
+    for section in ("ppo", "rocm_guardrails", "checkpoint"):
+        assert low_speed[section] == residual[section]
+
+    residual_environment = dict(residual["environment"])
+    low_speed_environment = dict(low_speed["environment"])
+    residual_environment["command_x_range"] = [0.02, 0.06]
+    assert low_speed_environment == residual_environment
+
+    residual_evaluation = dict(residual["manual_evaluation"])
+    low_speed_evaluation = dict(low_speed["manual_evaluation"])
+    residual_evaluation["fixed_command"] = [0.04, 0.0, 0.0]
+    assert low_speed_evaluation == residual_evaluation
+
+    residual_reward = dict(residual["reward"])
+    low_speed_reward = dict(low_speed["reward"])
+    residual_reward.pop("profile")
+    low_speed_reward.pop("profile")
+    assert low_speed_reward == residual_reward
+
+
 def test_trot_dwell_qualification_adds_only_minimum_air_time() -> None:
     timing = yaml.safe_load(
         (
