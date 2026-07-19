@@ -43,13 +43,16 @@ def main() -> int:
     nonfinite_state_count = jnp.zeros((), dtype=jnp.int32)
     three_or_more_contact_total = jnp.zeros(())
     robot_box_contact_total = jnp.zeros(())
+    first_robot_box_contact_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
+    base_to_prepush_at_first_contact = jnp.asarray(jnp.nan)
+    first_object_motion_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
     max_tilt_deg = jnp.zeros(())
     max_object_height = jnp.max(state.info["object_pos"][:, 2])
     max_object_speed = jnp.zeros(())
     minimum_goal_distance = initial_goal_distance
     minimum_prepush_distance = initial_prepush_distance
 
-    for _ in range(args.num_steps):
+    for step_index in range(args.num_steps):
         state = step_fn(state, actions)
         done_count += jnp.sum(state.done.astype(jnp.int32))
         illegal_contact_count += jnp.sum(
@@ -64,21 +67,40 @@ def main() -> int:
         contact = state.data._impl.contact
         geom1, geom2 = contact.geom[:, :, 0], contact.geom[:, :, 1]
         active = contact.dist < 0.0
-        box_contact = (geom1 == env._box_geom_id) | (
-            geom2 == env._box_geom_id
-        )
+        box_contact = (geom1 == env._box_geom_id) | (geom2 == env._box_geom_id)
         other_geom = jnp.where(geom1 == env._box_geom_id, geom2, geom1)
-        robot_box_contact_total += jnp.mean(
-            jnp.any(
-                active
-                & box_contact
-                & (other_geom != env._floor_geom_id),
+        robot_box_contact = jnp.any(
+            active & box_contact & (other_geom != env._floor_geom_id),
+            axis=-1,
+        )
+        robot_box_contact_total += jnp.mean(robot_box_contact)
+        any_robot_box_contact = jnp.any(robot_box_contact)
+        first_contact_now = any_robot_box_contact & (
+            first_robot_box_contact_step > args.num_steps
+        )
+        first_robot_box_contact_step = jnp.where(
+            first_contact_now,
+            step_index + 1,
+            first_robot_box_contact_step,
+        )
+        base_to_prepush_at_first_contact = jnp.where(
+            first_contact_now,
+            jnp.mean(state.metrics["base_to_prepush_distance"]),
+            base_to_prepush_at_first_contact,
+        )
+        object_motion = jnp.any(
+            jnp.linalg.norm(
+                state.info["object_pos"][:, :2] - initial_object_position[:, :2],
                 axis=-1,
             )
+            > 1.0e-3
         )
-        max_tilt_deg = jnp.maximum(
-            max_tilt_deg, jnp.max(state.metrics["tilt_deg"])
+        first_object_motion_step = jnp.where(
+            object_motion & (first_object_motion_step > args.num_steps),
+            step_index + 1,
+            first_object_motion_step,
         )
+        max_tilt_deg = jnp.maximum(max_tilt_deg, jnp.max(state.metrics["tilt_deg"]))
         max_object_height = jnp.maximum(
             max_object_height, jnp.max(state.info["object_pos"][:, 2])
         )
@@ -126,8 +148,21 @@ def main() -> int:
         "max_object_speed": float(max_object_speed),
         "mean_object_displacement": float(jnp.mean(object_displacement)),
         "max_object_displacement": float(jnp.max(object_displacement)),
-        "robot_box_contact_fraction": float(
-            robot_box_contact_total / args.num_steps
+        "robot_box_contact_fraction": float(robot_box_contact_total / args.num_steps),
+        "first_robot_box_contact_step": (
+            None
+            if int(first_robot_box_contact_step) > args.num_steps
+            else int(first_robot_box_contact_step)
+        ),
+        "base_to_prepush_at_first_contact": (
+            None
+            if int(first_robot_box_contact_step) > args.num_steps
+            else float(base_to_prepush_at_first_contact)
+        ),
+        "first_object_motion_step": (
+            None
+            if int(first_object_motion_step) > args.num_steps
+            else int(first_object_motion_step)
         ),
         "three_or_more_contact_fraction": float(
             three_or_more_contact_total / args.num_steps
