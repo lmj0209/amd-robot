@@ -155,6 +155,22 @@ class Go2Z1Env(MjxEnv):
         if self._mask_arm:
             action = action * _LEG_MASK
         ctrl = self._home_ctrl + self._action_scale * action
+        return self._step_with_ctrl(state, action, ctrl)
+
+    def _step_with_ctrl(
+        self,
+        state: State,
+        action: jax.Array,
+        ctrl: jax.Array,
+    ) -> State:
+        """Advance one control step using an explicit actuator target.
+
+        ``action`` remains the policy-side value used by observations and
+        diagnostics, while ``ctrl`` may include an environment-side reference
+        motion.  Keeping those two quantities separate lets later curriculum
+        slices add a nominal controller without changing the frozen action
+        interface or charging the reference motion to the policy residual.
+        """
 
         # Unroll the five physics substeps as a fixed Python loop (traced as
         # sequential mjx.step ops) instead of lax.scan. On gfx1100, vmap of a

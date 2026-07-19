@@ -78,6 +78,15 @@ and RGC system fingerprint.
   qualification session and adds 1,572,864 transitions, reaching 2,097,152
   total steps without changing the environment, reward, PPO, or ROCm
   guardrail contract.
+- `locomotion_stage1_crawl_reference_qualification.yaml`: replaces the closed
+  pure-trot-reward line with a measured four-beat FL-RR-FR-RL joint reference.
+  The reference shifts load into the three-foot support triangle before each
+  swing, while the policy retains the frozen 19-D interface and learns only a
+  residual. Zero command disables the reference. CPU MuJoCo qualification
+  bounds the reference at a 4.0-second cycle, 0.08-radian stride,
+  0.06-radian body shift, and 0.45-radian knee lift.
+  A 0.07-second sustained-air gate prevents contact-solver flicker from being
+  counted or rewarded as a completed swing.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.

@@ -105,6 +105,14 @@ def test_trot_phase_alternates_diagonal_contact_targets() -> None:
             {"trot_timing_scale": 1.0},
             "trot reward scales require gait_cycle_time",
         ),
+        (
+            {"crawl_reference_enabled": True},
+            "crawl reference requires gait_cycle_time",
+        ),
+        (
+            {"crawl_stride": -0.1},
+            "crawl stride must be non-negative",
+        ),
     ),
 )
 def test_trot_parameters_reject_invalid_combinations(
@@ -169,3 +177,74 @@ def test_trot_timing_dwell_gate_rejects_fast_contact_chatter() -> None:
 
     assert jnp.isclose(chatter, 0.1)
     assert jnp.isclose(sustained, 1.0)
+
+
+def test_crawl_reference_is_opt_in_and_preserves_raw_policy_action() -> None:
+    env = Go2Z1LocomotionEnv(
+        command_override=(0.4, 0.0, 0.0),
+        randomize_reset=False,
+        gait_cycle_time=4.0,
+        crawl_reference_enabled=True,
+        crawl_stride=0.08,
+        crawl_shift=0.06,
+        crawl_lift=0.45,
+        leg_kp=50.0,
+    )
+    state = jax.jit(env.reset)(jax.random.PRNGKey(0))
+    action = jnp.ones(env.action_size)
+    nxt = jax.jit(env.step)(state, action)
+    _block_tree(nxt)
+
+    assert env.action_size == 19
+    assert env.observation_size == 75
+    assert state.obs.shape == (75,)
+    assert state.info["crawl_reference"].shape == (12,)
+    assert state.info["crawl_sustained_touchdown"].shape == (4,)
+    assert jnp.any(jnp.abs(state.info["crawl_reference"]) > 0.0)
+    assert jnp.allclose(nxt.info["last_action"], action)
+    assert jnp.allclose(nxt.data.ctrl[12:], env._home_ctrl[12:])
+    assert jnp.isfinite(nxt.metrics["crawl_reference_rms"])
+    assert _tree_is_finite(nxt.data)
+
+
+def test_crawl_reference_is_disabled_for_zero_command() -> None:
+    env = Go2Z1LocomotionEnv(
+        command_override=(0.0, 0.0, 0.0),
+        randomize_reset=False,
+        gait_cycle_time=4.0,
+        crawl_reference_enabled=True,
+    )
+    state = jax.jit(env.reset)(jax.random.PRNGKey(0))
+
+    assert jnp.allclose(state.info["crawl_reference"], 0.0)
+    assert jnp.allclose(state.data.qpos, env._home_qpos)
+    assert jnp.allclose(state.data.ctrl, env._home_ctrl)
+
+
+def test_crawl_schedule_uses_four_beat_sequence() -> None:
+    phases = jnp.asarray([0.0, 0.5 * jnp.pi, jnp.pi, 1.5 * jnp.pi])
+    active_legs = [
+        int(Go2Z1LocomotionEnv._crawl_schedule(phase)[0]) for phase in phases
+    ]
+
+    assert active_legs == [0, 3, 1, 2]
+
+
+def test_crawl_reference_rejects_trot_reward_combination() -> None:
+    with pytest.raises(
+        ValueError,
+        match="crawl reference cannot be combined with trot rewards",
+    ):
+        Go2Z1LocomotionEnv(
+            gait_cycle_time=4.0,
+            crawl_reference_enabled=True,
+            trot_contact_scale=0.1,
+        )
+
+
+def test_crawl_reference_requires_positive_sustained_air_time() -> None:
+    with pytest.raises(
+        ValueError,
+        match="minimum air time must be positive",
+    ):
+        Go2Z1LocomotionEnv(crawl_min_air_time=0.0)

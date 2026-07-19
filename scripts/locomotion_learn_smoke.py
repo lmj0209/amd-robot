@@ -83,6 +83,13 @@ def _make_env(
         trot_timing_std=reward.get("trot_timing_std", 0.1),
         trot_timing_max_error=reward.get("trot_timing_max_error", 0.2),
         trot_timing_min_air_time=reward.get("trot_timing_min_air_time", 0.0),
+        crawl_reference_enabled=environment.get(
+            "crawl_reference_enabled", False
+        ),
+        crawl_stride=environment.get("crawl_stride", 0.08),
+        crawl_shift=environment.get("crawl_shift", 0.06),
+        crawl_lift=environment.get("crawl_lift", 0.45),
+        crawl_min_air_time=environment.get("crawl_min_air_time", 0.07),
         termination_cost_scale=reward["termination_cost_scale"],
         illegal_contact_cost_scale=reward["illegal_contact_cost_scale"],
         workspace_limit=environment["workspace_limit"],
@@ -125,6 +132,9 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
         contact_duty_total = jnp.zeros(len(FOOT_SITE_NAMES))
         liftoff_count = jnp.zeros(len(FOOT_SITE_NAMES), dtype=jnp.int32)
         touchdown_count = jnp.zeros(len(FOOT_SITE_NAMES), dtype=jnp.int32)
+        sustained_swing_count = jnp.zeros(
+            len(FOOT_SITE_NAMES), dtype=jnp.int32
+        )
         foot_height_total = jnp.zeros(len(FOOT_SITE_NAMES))
         foot_height_max = jnp.full((len(FOOT_SITE_NAMES),), -jnp.inf)
         completed_swing_air_time_total = jnp.zeros(len(FOOT_SITE_NAMES))
@@ -167,6 +177,12 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
                 jnp.abs(actions[:, :12]) >= 0.95
             )
             foot_contact = state.info["last_contact"]
+            if "crawl_sustained_touchdown" in state.info:
+                sustained_swing_count += jnp.sum(
+                    state.info["crawl_sustained_touchdown"],
+                    axis=0,
+                    dtype=jnp.int32,
+                )
             contact_duty_total += jnp.mean(foot_contact, axis=0)
             foot_height = state.data.site_xpos[:, env._foot_site_ids, -1]
             foot_height_total += jnp.mean(foot_height, axis=0)
@@ -283,6 +299,9 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
                     ),
                     f"{foot_name}_touchdowns_per_env": float(
                         touchdown_count[index] / n_envs
+                    ),
+                    f"{foot_name}_sustained_swings_per_env": float(
+                        sustained_swing_count[index] / n_envs
                     ),
                     f"{foot_name}_completed_swing_mean_air_time": float(
                         completed_swing_air_time_total[index]

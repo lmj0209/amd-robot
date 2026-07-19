@@ -569,6 +569,65 @@ def test_trot_timing_qualification_changes_only_contact_shaping() -> None:
     assert timing_reward == phase_reward
 
 
+def test_crawl_reference_qualification_changes_only_required_contracts() -> None:
+    baseline = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_low_lr_qualification.yaml"
+        ).read_text()
+    )
+    crawl = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_reference_qualification.yaml"
+        ).read_text()
+    )
+
+    assert crawl["environment"]["gait_cycle_time"] == 4.0
+    assert crawl["environment"]["crawl_reference_enabled"] is True
+    assert crawl["environment"]["crawl_stride"] == 0.08
+    assert crawl["environment"]["crawl_shift"] == 0.06
+    assert crawl["environment"]["crawl_lift"] == 0.45
+    assert crawl["environment"]["crawl_min_air_time"] == 0.07
+    assert crawl["environment"]["leg_kp"] == 50.0
+    assert crawl["ppo"]["episode_length"] == 512
+    assert crawl["manual_evaluation"]["num_steps"] == 800
+    assert crawl["rocm_guardrails"] == baseline["rocm_guardrails"]
+    assert crawl["checkpoint"] == baseline["checkpoint"]
+
+    baseline_environment = dict(baseline["environment"])
+    crawl_environment = dict(crawl["environment"])
+    for key in (
+        "gait_cycle_time",
+        "crawl_reference_enabled",
+        "crawl_stride",
+        "crawl_shift",
+        "crawl_lift",
+        "crawl_min_air_time",
+    ):
+        crawl_environment.pop(key)
+    baseline_environment["leg_kp"] = 50.0
+    assert crawl_environment == baseline_environment
+
+    baseline_reward = dict(baseline["reward"])
+    crawl_reward = dict(crawl["reward"])
+    baseline_reward.pop("profile")
+    crawl_reward.pop("profile")
+    assert crawl_reward == baseline_reward
+
+    baseline_ppo = dict(baseline["ppo"])
+    crawl_ppo = dict(crawl["ppo"])
+    baseline_ppo["episode_length"] = 512
+    assert crawl_ppo == baseline_ppo
+
+    baseline_evaluation = dict(baseline["manual_evaluation"])
+    crawl_evaluation = dict(crawl["manual_evaluation"])
+    baseline_evaluation["num_steps"] = 800
+    assert crawl_evaluation == baseline_evaluation
+
+
 def test_trot_dwell_qualification_adds_only_minimum_air_time() -> None:
     timing = yaml.safe_load(
         (
