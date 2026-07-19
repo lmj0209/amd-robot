@@ -27,9 +27,11 @@ Run after fetching menagerie::
 
     python scripts/build_go2_z1.py
 
-Outputs the robot model at ``assets/menagerie/go2_z1/go2_z1.xml`` and a flat
-ground scene at ``assets/menagerie/go2_z1/scene_mjx.xml``, then prints compile,
-DoF, and ground-plane audits.
+Outputs the robot model at ``assets/menagerie/go2_z1/go2_z1.xml``, a flat
+locomotion scene at ``assets/menagerie/go2_z1/scene_mjx.xml``, and a fixed
+near-field Push-to-Goal scene at
+``assets/menagerie/go2_z1/scene_push_mjx.xml``.  It then prints compile, DoF,
+ground-plane, and task-object audits.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ Z1_XML = MENAGERIE / "unitree_z1" / "z1_gripper.xml"
 OUT_DIR = MENAGERIE / "go2_z1"
 OUT_XML = OUT_DIR / "go2_z1.xml"
 OUT_SCENE_XML = OUT_DIR / "scene_mjx.xml"
+OUT_PUSH_SCENE_XML = OUT_DIR / "scene_push_mjx.xml"
 
 # Actuator order must match src/amd_robo/contracts.py::ACTION_LAYOUT exactly.
 EXPECTED_LEG_ACTUATORS = (
@@ -70,6 +73,14 @@ EXPECTED_ACTUATORS = (
     + list(EXPECTED_GRIPPER_ACTUATOR)
 )
 FOOT_SITE_NAMES = ("FL_foot", "FR_foot", "RL_foot", "RR_foot")
+PUSH_BOX_BODY_NAME = "push_box_body"
+PUSH_BOX_JOINT_NAME = "push_box_joint"
+PUSH_BOX_GEOM_NAME = "push_box"
+PREPUSH_SITE_NAME = "prepush_site"
+GOAL_SITE_NAME = "goal_site"
+PUSH_BOX_INITIAL_POS = (0.8, 0.0, 0.1)
+PREPUSH_POS = (0.5, 0.0, 0.015)
+GOAL_POS = (1.2, 0.0, 0.005)
 
 # Placeholder carry pose: Z1 stator welded on top of the trunk, arm reaching
 # forward over the head (180 deg about z maps the Z1 home reach from -x to +x).
@@ -282,7 +293,67 @@ def build_scene() -> ET.Element:
     return scene
 
 
-def audit(xml_path: Path, *, expect_floor: bool = False) -> None:
+def build_push_scene() -> ET.Element:
+    """Add a physical near-field box and visual task markers to the flat scene."""
+    scene = build_scene()
+    scene.set("model", "go2_z1 push scene")
+    worldbody = scene.find("worldbody")
+    if worldbody is None:
+        raise SystemExit(f"worldbody missing in {GO2_SCENE_XML}")
+
+    box = ET.SubElement(
+        worldbody,
+        "body",
+        {
+            "name": PUSH_BOX_BODY_NAME,
+            "pos": " ".join(map(str, PUSH_BOX_INITIAL_POS)),
+        },
+    )
+    ET.SubElement(box, "freejoint", {"name": PUSH_BOX_JOINT_NAME})
+    ET.SubElement(
+        box,
+        "geom",
+        {
+            "name": PUSH_BOX_GEOM_NAME,
+            "type": "box",
+            "size": "0.1 0.1 0.1",
+            "mass": "2",
+            "friction": "0.8 0.02 0.001",
+            "condim": "3",
+            "rgba": "0.85 0.35 0.12 1",
+        },
+    )
+    ET.SubElement(
+        worldbody,
+        "site",
+        {
+            "name": PREPUSH_SITE_NAME,
+            "type": "cylinder",
+            "pos": " ".join(map(str, PREPUSH_POS)),
+            "size": "0.045 0.003",
+            "rgba": "0.15 0.45 1 0.45",
+        },
+    )
+    ET.SubElement(
+        worldbody,
+        "site",
+        {
+            "name": GOAL_SITE_NAME,
+            "type": "box",
+            "pos": " ".join(map(str, GOAL_POS)),
+            "size": "0.18 0.18 0.003",
+            "rgba": "0.15 0.85 0.25 0.35",
+        },
+    )
+    return scene
+
+
+def audit(
+    xml_path: Path,
+    *,
+    expect_floor: bool = False,
+    expect_push_task: bool = False,
+) -> None:
     """Compile with CPU MuJoCo and assert the 19-DoF contract."""
     try:
         import mujoco
@@ -313,7 +384,8 @@ def audit(xml_path: Path, *, expect_floor: bool = False) -> None:
     assert actuator_names == EXPECTED_ACTUATORS, (
         f"actuator order mismatch:\n got {actuator_names}\n exp {EXPECTED_ACTUATORS}"
     )
-    assert joint_names[-7:] == [
+    arm_joint_names = joint_names[-8:-1] if expect_push_task else joint_names[-7:]
+    assert arm_joint_names == [
         "joint1",
         "joint2",
         "joint3",
@@ -321,7 +393,7 @@ def audit(xml_path: Path, *, expect_floor: bool = False) -> None:
         "joint5",
         "joint6",
         "jointGripper",
-    ], f"arm joints not last in qpos: {joint_names[-7:]}"
+    ], f"arm joint order mismatch: {arm_joint_names}"
     assert model.key_qpos[0].shape[0] == model.nq, (
         f"home qpos len {model.key_qpos[0].shape[0]} != nq {model.nq}"
     )
@@ -343,6 +415,40 @@ def audit(xml_path: Path, *, expect_floor: bool = False) -> None:
         assert not non_floor_contacts, (
             f"home pose has non-floor contacts: {non_floor_contacts}"
         )
+    if expect_push_task:
+        import numpy as np
+
+        box_body_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_BODY, PUSH_BOX_BODY_NAME
+        )
+        box_joint_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_JOINT, PUSH_BOX_JOINT_NAME
+        )
+        box_geom_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_GEOM, PUSH_BOX_GEOM_NAME
+        )
+        prepush_site_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SITE, PREPUSH_SITE_NAME
+        )
+        goal_site_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SITE, GOAL_SITE_NAME
+        )
+        assert min(
+            box_body_id,
+            box_joint_id,
+            box_geom_id,
+            prepush_site_id,
+            goal_site_id,
+        ) >= 0, "push task object or marker is missing"
+        assert model.jnt_type[box_joint_id] == mujoco.mjtJoint.mjJNT_FREE
+        assert joint_names[-1] == PUSH_BOX_JOINT_NAME
+        box_qpos_adr = model.jnt_qposadr[box_joint_id]
+        assert np.allclose(
+            model.key_qpos[0, box_qpos_adr : box_qpos_adr + 7],
+            (*PUSH_BOX_INITIAL_POS, 1.0, 0.0, 0.0, 0.0),
+        )
+        assert np.allclose(model.site_pos[prepush_site_id], PREPUSH_POS)
+        assert np.allclose(model.site_pos[goal_site_id], GOAL_POS)
     print("COMPILE + 19-DoF CONTRACT AUDIT PASSED")
 
 
@@ -368,10 +474,17 @@ def main() -> int:
     scene = build_scene()
     ET.indent(scene, space="  ")
     ET.ElementTree(scene).write(OUT_SCENE_XML, encoding="utf-8", xml_declaration=True)
+    push_scene = build_push_scene()
+    ET.indent(push_scene, space="  ")
+    ET.ElementTree(push_scene).write(
+        OUT_PUSH_SCENE_XML, encoding="utf-8", xml_declaration=True
+    )
     print(f"wrote {OUT_XML.relative_to(REPO_ROOT)}")
     print(f"wrote {OUT_SCENE_XML.relative_to(REPO_ROOT)}")
+    print(f"wrote {OUT_PUSH_SCENE_XML.relative_to(REPO_ROOT)}")
     audit(OUT_XML)
     audit(OUT_SCENE_XML, expect_floor=True)
+    audit(OUT_PUSH_SCENE_XML, expect_floor=True, expect_push_task=True)
     return 0
 
 
