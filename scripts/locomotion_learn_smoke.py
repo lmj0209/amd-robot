@@ -368,9 +368,11 @@ def _sequential_eval(
                         reached_now,
                         state.info["steps"].astype(jnp.int32),
                         first_phase_steps[task_phase],
-                    )
+                )
                 goal_distance = state.metrics["object_to_goal_distance"]
-                object_speed = state.metrics["object_speed"]
+                object_speed = jnp.linalg.norm(
+                    state.info["object_qvel"][:, :2], axis=-1
+                )
                 object_height = state.metrics["object_height"]
                 push_last_goal_distance = jnp.where(
                     active, goal_distance, push_last_goal_distance
