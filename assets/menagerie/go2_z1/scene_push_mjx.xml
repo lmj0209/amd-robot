@@ -18,6 +18,7 @@
     <body name="push_box_body" pos="0.8 0.0 0.1">
       <freejoint name="push_box_joint" />
       <geom name="push_box" type="box" size="0.1 0.1 0.1" mass="2" friction="0.8 0.02 0.001" condim="3" rgba="0.85 0.35 0.12 1" />
+      <site name="push_contact_site" type="sphere" pos="-0.105 0.0 0.0" size="0.012" rgba="1 0.85 0.1 0.8" group="1" />
     </body>
     <site name="prepush_site" type="cylinder" pos="0.5 0.0 0.015" size="0.045 0.003" rgba="0.15 0.45 1 0.45" />
     <site name="goal_site" type="box" pos="1.2 0.0 0.005" size="0.18 0.18 0.003" rgba="0.15 0.85 0.25 0.35" />

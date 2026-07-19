@@ -73,9 +73,14 @@ EXPECTED_ACTUATORS = (
     + list(EXPECTED_GRIPPER_ACTUATOR)
 )
 FOOT_SITE_NAMES = ("FL_foot", "FR_foot", "RL_foot", "RR_foot")
+END_EFFECTOR_SITE_NAME = "z1_ee"
+END_EFFECTOR_BODY_NAME = "link06"
+END_EFFECTOR_LOCAL_POS = (0.186, 0.0, -0.009)
 PUSH_BOX_BODY_NAME = "push_box_body"
 PUSH_BOX_JOINT_NAME = "push_box_joint"
 PUSH_BOX_GEOM_NAME = "push_box"
+PUSH_CONTACT_SITE_NAME = "push_contact_site"
+PUSH_CONTACT_LOCAL_POS = (-0.105, 0.0, 0.0)
 PREPUSH_SITE_NAME = "prepush_site"
 GOAL_SITE_NAME = "goal_site"
 PUSH_KEYFRAME_NAME = "push_home"
@@ -233,6 +238,24 @@ def build() -> ET.Element:
     arm = _deepcopy(z1_link00)
     arm.set("pos", ARM_MOUNT_POS)
     arm.set("quat", ARM_MOUNT_QUAT)
+    end_effector_body = arm.find(
+        f".//body[@name='{END_EFFECTOR_BODY_NAME}']"
+    )
+    if end_effector_body is None:
+        raise SystemExit(
+            f"Z1 end-effector body '{END_EFFECTOR_BODY_NAME}' not found"
+        )
+    ET.SubElement(
+        end_effector_body,
+        "site",
+        {
+            "name": END_EFFECTOR_SITE_NAME,
+            "pos": " ".join(map(str, END_EFFECTOR_LOCAL_POS)),
+            "size": "0.012",
+            "rgba": "1 0.85 0.1 0.8",
+            "group": "1",
+        },
+    )
     base.append(arm)
     merged.append(_deepcopy(go2_world))
 
@@ -329,6 +352,18 @@ def build_push_scene() -> ET.Element:
         },
     )
     ET.SubElement(
+        box,
+        "site",
+        {
+            "name": PUSH_CONTACT_SITE_NAME,
+            "type": "sphere",
+            "pos": " ".join(map(str, PUSH_CONTACT_LOCAL_POS)),
+            "size": "0.012",
+            "rgba": "1 0.85 0.1 0.8",
+            "group": "1",
+        },
+    )
+    ET.SubElement(
         worldbody,
         "site",
         {
@@ -420,6 +455,18 @@ def audit(
     assert model.key_qpos[0].shape[0] == model.nq, (
         f"home qpos len {model.key_qpos[0].shape[0]} != nq {model.nq}"
     )
+    end_effector_site_id = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_SITE, END_EFFECTOR_SITE_NAME
+    )
+    assert end_effector_site_id >= 0, "Z1 end-effector site is missing"
+    assert (
+        mujoco.mj_id2name(
+            model,
+            mujoco.mjtObj.mjOBJ_BODY,
+            model.site_bodyid[end_effector_site_id],
+        )
+        == END_EFFECTOR_BODY_NAME
+    )
     floor_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
     if expect_floor:
         assert floor_id >= 0, "flat scene is missing the floor geom"
@@ -467,6 +514,9 @@ def audit(
         goal_site_id = mujoco.mj_name2id(
             model, mujoco.mjtObj.mjOBJ_SITE, GOAL_SITE_NAME
         )
+        push_contact_site_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SITE, PUSH_CONTACT_SITE_NAME
+        )
         assert min(
             box_body_id,
             box_joint_id,
@@ -474,6 +524,7 @@ def audit(
             push_key_id,
             prepush_site_id,
             goal_site_id,
+            push_contact_site_id,
         ) >= 0, "push task object or marker is missing"
         assert model.jnt_type[box_joint_id] == mujoco.mjtJoint.mjJNT_FREE
         assert model.opt.iterations == PUSH_SOLVER_ITERATIONS
@@ -485,6 +536,10 @@ def audit(
         )
         assert np.allclose(model.site_pos[prepush_site_id], PREPUSH_POS)
         assert np.allclose(model.site_pos[goal_site_id], GOAL_POS)
+        assert np.allclose(
+            model.site_pos[push_contact_site_id], PUSH_CONTACT_LOCAL_POS
+        )
+        assert model.site_bodyid[push_contact_site_id] == box_body_id
     print("COMPILE + 19-DoF CONTRACT AUDIT PASSED")
 
 

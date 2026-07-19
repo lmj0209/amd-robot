@@ -17,6 +17,8 @@ PUSH_HOME_KEYFRAME = "push_home"
 PUSH_BOX_BODY_NAME = "push_box_body"
 PUSH_BOX_JOINT_NAME = "push_box_joint"
 PUSH_BOX_GEOM_NAME = "push_box"
+END_EFFECTOR_SITE_NAME = "z1_ee"
+PUSH_CONTACT_SITE_NAME = "push_contact_site"
 PREPUSH_SITE_NAME = "prepush_site"
 GOAL_SITE_NAME = "goal_site"
 DEFAULT_APPROACH_STOP_DISTANCE = 0.2
@@ -25,7 +27,7 @@ DEFAULT_APPROACH_STOP_DISTANCE = 0.2
 class Go2Z1PushEnv(Go2Z1LocomotionEnv):
     """Expose physical object and goal state without changing the 19-D action."""
 
-    _TASK_OBSERVATION_SIZE = 9
+    _TASK_OBSERVATION_SIZE = 12
 
     def __init__(
         self,
@@ -66,6 +68,12 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         )
         self._box_geom_id = self._required_id(
             mujoco.mjtObj.mjOBJ_GEOM, PUSH_BOX_GEOM_NAME
+        )
+        self._end_effector_site_id = self._required_id(
+            mujoco.mjtObj.mjOBJ_SITE, END_EFFECTOR_SITE_NAME
+        )
+        self._push_contact_site_id = self._required_id(
+            mujoco.mjtObj.mjOBJ_SITE, PUSH_CONTACT_SITE_NAME
         )
         self._prepush_site_id = self._required_id(
             mujoco.mjtObj.mjOBJ_SITE, PREPUSH_SITE_NAME
@@ -127,18 +135,26 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         world_to_base = _rotmat(data.qpos[3:7]).T
         base_position = data.qpos[:3]
         object_position = data.xpos[self._box_body_id]
+        end_effector_position = data.site_xpos[self._end_effector_site_id]
+        push_contact_position = data.site_xpos[self._push_contact_site_id]
         prepush_position = data.site_xpos[self._prepush_site_id]
         goal_position = data.site_xpos[self._goal_site_id]
         object_relative = world_to_base @ (object_position - base_position)
         prepush_relative = world_to_base @ (prepush_position - base_position)
         goal_relative_object = world_to_base @ (goal_position - object_position)
+        push_contact_relative_ee = world_to_base @ (
+            push_contact_position - end_effector_position
+        )
         return (
             object_position,
+            end_effector_position,
+            push_contact_position,
             prepush_position,
             goal_position,
             object_relative,
             prepush_relative,
             goal_relative_object,
+            push_contact_relative_ee,
         )
 
     def _observation(
@@ -160,20 +176,31 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             _,
             _,
             _,
+            _,
+            _,
             object_relative,
             prepush_relative,
             goal_relative_object,
+            push_contact_relative_ee,
         ) = self._task_vectors(data)
         task = jnp.concatenate(
-            [object_relative, prepush_relative, goal_relative_object]
+            [
+                object_relative,
+                prepush_relative,
+                goal_relative_object,
+                push_contact_relative_ee,
+            ]
         )
         return jnp.clip(jnp.concatenate([locomotion, task]), -10.0, 10.0)
 
     def _with_task_state(self, state):
         (
             object_position,
+            end_effector_position,
+            push_contact_position,
             prepush_position,
             goal_position,
+            _,
             _,
             _,
             _,
@@ -185,6 +212,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             "object_qpos": object_qpos,
             "object_qvel": object_qvel,
             "object_pos": object_position,
+            "end_effector_pos": end_effector_position,
+            "push_contact_pos": push_contact_position,
             "prepush_pos": prepush_position,
             "goal_pos": goal_position,
         }
@@ -200,6 +229,9 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
                 object_qpos[:2] - self._initial_box_qpos[:2]
             ),
             "object_height": object_position[2],
+            "end_effector_to_push_distance": jnp.linalg.norm(
+                end_effector_position - push_contact_position
+            ),
             "approach_stop_distance": jnp.asarray(self._approach_stop_distance),
             "task_phase": info["phase"].astype(jnp.float32),
         }

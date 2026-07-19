@@ -14,8 +14,8 @@ def test_push_reset_uses_named_keyframe_and_exposes_task_state():
     _block_tree(state)
 
     assert env.action_size == 19
-    assert env.observation_size == 84
-    assert state.obs.shape == (84,)
+    assert env.observation_size == 87
+    assert state.obs.shape == (87,)
     assert env._home_keyframe == "push_home"
     assert env._joint_qpos_indices.shape == (19,)
     assert env._joint_dof_indices.shape == (19,)
@@ -26,10 +26,20 @@ def test_push_reset_uses_named_keyframe_and_exposes_task_state():
         jnp.asarray([0.8, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0]),
     )
     assert jnp.allclose(state.info["object_pos"], jnp.asarray([0.8, 0.0, 0.1]))
+    assert jnp.allclose(
+        state.info["end_effector_pos"],
+        jnp.asarray([-0.15487455, 0.0, 0.6098599]),
+        atol=1.0e-5,
+    )
+    assert jnp.allclose(
+        state.info["push_contact_pos"],
+        jnp.asarray([0.695, 0.0, 0.1]),
+    )
     assert jnp.allclose(state.info["prepush_pos"], jnp.asarray([0.5, 0.0, 0.015]))
     assert jnp.allclose(state.info["goal_pos"], jnp.asarray([1.2, 0.0, 0.005]))
     assert jnp.isclose(state.metrics["base_to_prepush_distance"], 0.5)
     assert jnp.isclose(state.metrics["object_to_goal_distance"], 0.4)
+    assert state.metrics["end_effector_to_push_distance"] > 0.9
     assert _tree_is_finite(state.data)
 
 

@@ -49,6 +49,9 @@ def main() -> int:
     initial_object_position = state.info["object_pos"]
     initial_goal_distance = jnp.mean(state.metrics["object_to_goal_distance"])
     initial_prepush_distance = jnp.mean(state.metrics["base_to_prepush_distance"])
+    initial_end_effector_distance = jnp.mean(
+        state.metrics["end_effector_to_push_distance"]
+    )
     actions = jnp.zeros((args.num_envs, env.action_size))
     done_count = jnp.zeros((), dtype=jnp.int32)
     illegal_contact_count = jnp.zeros((), dtype=jnp.int32)
@@ -67,6 +70,7 @@ def main() -> int:
     max_object_speed = jnp.zeros(())
     minimum_goal_distance = initial_goal_distance
     minimum_prepush_distance = initial_prepush_distance
+    minimum_end_effector_distance = initial_end_effector_distance
 
     for step_index in range(args.num_steps):
         state = step_fn(state, actions)
@@ -158,6 +162,10 @@ def main() -> int:
             minimum_prepush_distance,
             jnp.mean(state.metrics["base_to_prepush_distance"]),
         )
+        minimum_end_effector_distance = jnp.minimum(
+            minimum_end_effector_distance,
+            jnp.mean(state.metrics["end_effector_to_push_distance"]),
+        )
 
     _block_tree(state)
     object_displacement = jnp.linalg.norm(
@@ -183,6 +191,11 @@ def main() -> int:
         "minimum_object_to_goal_distance": float(minimum_goal_distance),
         "final_object_to_goal_distance": float(
             jnp.mean(state.metrics["object_to_goal_distance"])
+        ),
+        "initial_end_effector_to_push_distance": float(initial_end_effector_distance),
+        "minimum_end_effector_to_push_distance": float(minimum_end_effector_distance),
+        "final_end_effector_to_push_distance": float(
+            jnp.mean(state.metrics["end_effector_to_push_distance"])
         ),
         "final_object_position": [
             float(value) for value in jnp.mean(state.info["object_pos"], axis=0)
