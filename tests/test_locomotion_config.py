@@ -217,6 +217,11 @@ def test_push_position_x_ramp_changes_only_push_command_startup() -> None:
             "push_stage2_position_x_1cm_align85_ramp050_qualification",
             0.5,
         ),
+        (
+            "push_stage2_position_x_1cm_align85_ramp075_qualification.yaml",
+            "push_stage2_position_x_1cm_align85_ramp075_qualification",
+            0.75,
+        ),
     )
 
     for config_name, status, duration in ramp_cases:
