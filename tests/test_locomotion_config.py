@@ -251,6 +251,51 @@ def test_push_position_x_ramp_changes_only_push_command_startup() -> None:
         assert ramp_reward == align85_reward
 
 
+def test_push_position_x_safety_margin_changes_only_penalty_thresholds() -> None:
+    align85 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_qualification.yaml"
+        ).read_text()
+    )
+    margin = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_safety_margin_qualification.yaml"
+        ).read_text()
+    )
+
+    assert margin["status"] == (
+        "push_stage2_position_x_1cm_align85_safety_margin_qualification"
+    )
+    assert margin["push"]["object_speed_limit"] == 0.35
+    assert margin["push"]["object_height_tolerance"] == 0.015
+    for section in (
+        "environment",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert margin[section] == align85[section]
+
+    align85_push = dict(align85["push"])
+    margin_push = dict(margin["push"])
+    for key in ("object_speed_limit", "object_height_tolerance"):
+        align85_push.pop(key)
+        margin_push.pop(key)
+    assert margin_push == align85_push
+
+    align85_reward = dict(align85["reward"])
+    margin_reward = dict(margin["reward"])
+    align85_reward.pop("profile")
+    margin_reward.pop("profile")
+    assert margin_reward == align85_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 
