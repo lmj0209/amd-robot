@@ -22,6 +22,7 @@ from amd_robo.envs.go2_z1_locomotion import (  # noqa: E402
     FOOT_SITE_NAMES,
     Go2Z1LocomotionEnv,
 )
+from amd_robo.envs.go2_z1_push import Go2Z1PushEnv  # noqa: E402
 from amd_robo.training.host_loop import plan_brax_host_loop  # noqa: E402
 from amd_robo.training.learner_checkpoint import (  # noqa: E402
     load_training_session_checkpoint,
@@ -41,12 +42,18 @@ def _make_env(
     *,
     command_override=None,
     randomize_reset: bool | None = None,
+    task: str = "locomotion",
 ) -> Go2Z1LocomotionEnv:
     environment = config["environment"]
     reward = config["reward"]
     if randomize_reset is None:
         randomize_reset = environment["randomized_reset"]
-    return Go2Z1LocomotionEnv(
+    if task == "push" and command_override is None:
+        command_override = (0.025, 0.0, 0.0)
+    env_class = (
+        Go2Z1PushEnv if task == "push" else Go2Z1LocomotionEnv
+    )
+    return env_class(
         ctrl_dt=environment["control_timestep"],
         action_scale=environment.get("action_scale", 0.25),
         leg_kp=environment.get("leg_kp"),
@@ -398,6 +405,11 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/locomotion.yaml")
+    parser.add_argument(
+        "--task",
+        choices=("locomotion", "push"),
+        default="locomotion",
+    )
     parser.add_argument("--num-timesteps", type=int)
     parser.add_argument("--episode-length", type=int)
     parser.add_argument("--num-envs", type=int)
@@ -534,7 +546,7 @@ def main() -> int:
     from brax.training.agents.ppo import train as ppo
     from mujoco_playground import wrapper
 
-    env = _make_env(config)
+    env = _make_env(config, task=args.task)
     max_substeps = guardrails["max_physics_substeps_per_control"]
     if env.n_substeps > max_substeps:
         raise ValueError(
@@ -575,6 +587,7 @@ def main() -> int:
         f"policy_hidden_layer_sizes={policy_hidden_layer_sizes} "
         f"value_hidden_layer_sizes={value_hidden_layer_sizes} "
         f"checkpoint_interval_steps={checkpoint_interval_steps} "
+        f"task={args.task} "
         f"config={args.config} config_sha256={config_sha256} "
         f"seed={config['seed']} "
         f"matmul_precision="
@@ -624,6 +637,7 @@ def main() -> int:
         metadata = {
             "config": args.config,
             "config_sha256": config_sha256,
+            "task": args.task,
             "num_timesteps": actual_timesteps,
             "episode_length": episode_length,
             "num_envs": num_envs,
@@ -838,6 +852,7 @@ def main() -> int:
         config,
         command_override=evaluation["fixed_command"],
         randomize_reset=False,
+        task=args.task,
     )
     print("LOCOMOTION_EVAL_START implementation=sequential_python_loop", flush=True)
     results = _sequential_eval(
