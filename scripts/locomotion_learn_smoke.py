@@ -425,7 +425,11 @@ def _sequential_eval(
             "done_count": int(done_count),
             "illegal_contact_count": int(illegal_contact_count),
             "nonfinite_state_count": int(nonfinite_state_count),
-            "gait_diagnostics_valid": int(done_count) == 0,
+            "gait_diagnostics_valid": (
+                int(done_count) == int(jnp.sum(push_success))
+                if push_eval
+                else int(done_count) == 0
+            ),
             "diagonal_pair_mismatch_fraction": float(
                 diagonal_pair_mismatch_total / n_steps
             ),
@@ -462,6 +466,9 @@ def _sequential_eval(
                     "push_success_count": int(jnp.sum(push_success)),
                     "push_success_rate": float(jnp.mean(push_success)),
                     "push_terminal_count": int(jnp.sum(push_terminal)),
+                    "push_abnormal_termination_count": max(
+                        int(done_count) - int(jnp.sum(push_success)), 0
+                    ),
                     "push_horizon_incomplete_count": int(jnp.sum(push_active)),
                     "push_reached_align_count": int(
                         jnp.sum(push_max_phase >= int(TaskPhase.ALIGN))
