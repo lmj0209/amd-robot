@@ -25,6 +25,8 @@ DEFAULT_APPROACH_STOP_DISTANCE = 0.2
 DEFAULT_ALIGN_DURATION = 6.0
 DEFAULT_ALIGN_DISTANCE_THRESHOLD = 0.08
 DEFAULT_PUSH_COMMAND_X = 0.025
+DEFAULT_GOAL_THRESHOLD = 0.08
+DEFAULT_SUCCESS_HOLD_STEPS = 100
 ALIGN_ARM_JOINT_TARGET = (
     2.4480703588935633,
     2.775837254707154,
@@ -47,6 +49,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         align_duration: float = DEFAULT_ALIGN_DURATION,
         align_distance_threshold: float = DEFAULT_ALIGN_DISTANCE_THRESHOLD,
         push_command_x: float = DEFAULT_PUSH_COMMAND_X,
+        goal_threshold: float = DEFAULT_GOAL_THRESHOLD,
+        success_hold_steps: int = DEFAULT_SUCCESS_HOLD_STEPS,
         **kwargs,
     ) -> None:
         if approach_stop_distance <= 0.0:
@@ -57,6 +61,10 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("align distance threshold must be positive")
         if push_command_x <= 0.0:
             raise ValueError("push command must be positive")
+        if goal_threshold <= 0.0:
+            raise ValueError("goal threshold must be positive")
+        if success_hold_steps <= 0:
+            raise ValueError("success hold steps must be positive")
         self._approach_stop_distance = float(approach_stop_distance)
         self._align_duration = float(align_duration)
         self._align_distance_threshold = float(align_distance_threshold)
@@ -64,6 +72,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             [push_command_x, 0.0, 0.0],
             dtype=jnp.float32,
         )
+        self._goal_threshold = float(goal_threshold)
+        self._success_hold_steps = int(success_hold_steps)
         kwargs.setdefault("home_keyframe", PUSH_HOME_KEYFRAME)
         kwargs.setdefault("ctrl_dt", 0.01)
         kwargs.setdefault("action_scale", 0.1)
@@ -170,6 +180,17 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             int(TaskPhase.PUSH),
             phase,
         )
+        in_goal = state.metrics["object_to_goal_distance"] <= self._goal_threshold
+        phase = jnp.where(
+            (phase == int(TaskPhase.PUSH)) & in_goal,
+            int(TaskPhase.HOLD),
+            phase,
+        )
+        phase = jnp.where(
+            (phase == int(TaskPhase.HOLD)) & ~in_goal,
+            int(TaskPhase.PUSH),
+            phase,
+        )
         command = jnp.where(
             phase == int(TaskPhase.APPROACH),
             state.info["command"],
@@ -186,8 +207,13 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             0,
         )
         push_steps = jnp.where(
-            phase == int(TaskPhase.PUSH),
-            state.info["push_steps"] + 1,
+            phase >= int(TaskPhase.PUSH),
+            state.info["push_steps"] + (phase == int(TaskPhase.PUSH)).astype(jnp.int32),
+            0,
+        )
+        success_count = jnp.where(
+            phase == int(TaskPhase.HOLD),
+            state.info["success_count"] + 1,
             0,
         )
         staged = state.replace(
@@ -197,9 +223,13 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
                 "command": command,
                 "align_steps": align_steps,
                 "push_steps": push_steps,
+                "success_count": success_count,
             }
         )
-        return self._with_task_state(super().step(staged, action))
+        stepped = self._with_task_state(super().step(staged, action))
+        return stepped.replace(
+            done=jnp.maximum(stepped.done, stepped.metrics["success"])
+        )
 
     def _task_actuator_reference(self, state) -> jax.Array:
         progress = jnp.clip(
@@ -322,6 +352,12 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
                 1.0,
             ),
             "push_steps": info["push_steps"].astype(jnp.float32),
+            "success_hold_count": info["success_count"].astype(jnp.float32),
+            "success": (
+                (info["phase"] == int(TaskPhase.HOLD))
+                & (info["success_count"] >= self._success_hold_steps)
+            ).astype(jnp.float32),
+            "goal_threshold": jnp.asarray(self._goal_threshold),
         }
         return state.replace(
             obs=self._observation(

@@ -24,6 +24,7 @@ def test_push_reset_uses_named_keyframe_and_exposes_task_state():
     assert state.info["align_steps"] == 0
     assert state.info["push_steps"] == 0
     assert state.metrics["align_progress"] == 0.0
+    assert state.metrics["success"] == 0.0
     assert jnp.allclose(
         state.info["object_qpos"],
         jnp.asarray([0.8, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0]),
@@ -123,6 +124,29 @@ def test_push_enters_push_after_completed_alignment():
     assert nxt.info["push_steps"] == 1
     assert jnp.allclose(nxt.info["command"], env._push_command)
     assert _tree_is_finite(nxt.data)
+
+
+def test_push_requires_a_sustained_hold_for_success():
+    env = Go2Z1PushEnv(goal_threshold=1.0, success_hold_steps=1)
+    state = jax.jit(env.reset)(jax.random.PRNGKey(0))
+    state = state.replace(
+        info={
+            **state.info,
+            "phase": jnp.asarray(int(TaskPhase.PUSH)),
+            "align_steps": jnp.asarray(
+                round(env._align_duration / env.dt),
+                dtype=jnp.int32,
+            ),
+        }
+    )
+    nxt = jax.jit(env.step)(state, jnp.zeros(env.action_size))
+    _block_tree(nxt)
+
+    assert nxt.info["phase"] == int(TaskPhase.HOLD)
+    assert nxt.info["success_count"] == 1
+    assert nxt.metrics["success"] == 1.0
+    assert nxt.done == 1.0
+    assert jnp.allclose(nxt.info["command"], 0.0)
 
 
 def test_push_reset_and_step_are_finite_under_vmap():

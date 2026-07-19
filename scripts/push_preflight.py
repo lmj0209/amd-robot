@@ -62,6 +62,8 @@ def main() -> int:
     base_to_prepush_at_align = jnp.asarray(jnp.nan)
     first_push_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
     end_effector_to_target_at_push = jnp.asarray(jnp.nan)
+    first_hold_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
+    first_success_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
     first_robot_box_contact_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
     base_to_prepush_at_first_contact = jnp.asarray(jnp.nan)
     first_object_motion_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
@@ -109,6 +111,18 @@ def main() -> int:
             first_push_now,
             jnp.mean(state.metrics["end_effector_to_push_distance"]),
             end_effector_to_target_at_push,
+        )
+        any_hold = jnp.any(state.info["phase"] >= int(TaskPhase.HOLD))
+        first_hold_step = jnp.where(
+            any_hold & (first_hold_step > args.num_steps),
+            step_index + 1,
+            first_hold_step,
+        )
+        any_success = jnp.any(state.metrics["success"] > 0.0)
+        first_success_step = jnp.where(
+            any_success & (first_success_step > args.num_steps),
+            step_index + 1,
+            first_success_step,
         )
         contact = state.data._impl.contact
         geom1, geom2 = contact.geom[:, :, 0], contact.geom[:, :, 1]
@@ -237,6 +251,16 @@ def main() -> int:
             if int(first_push_step) > args.num_steps
             else float(end_effector_to_target_at_push)
         ),
+        "first_hold_step": (
+            None if int(first_hold_step) > args.num_steps else int(first_hold_step)
+        ),
+        "first_success_step": (
+            None
+            if int(first_success_step) > args.num_steps
+            else int(first_success_step)
+        ),
+        "final_success_hold_count": int(jnp.max(state.info["success_count"])),
+        "success": bool(jnp.any(state.metrics["success"] > 0.0)),
         "first_robot_box_contact_step": (
             None
             if int(first_robot_box_contact_step) > args.num_steps
