@@ -14,6 +14,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 
+from amd_robo.contracts import TaskPhase  # noqa: E402
 from amd_robo.envs.go2_z1_push import Go2Z1PushEnv  # noqa: E402
 from amd_robo.platform.smoke import _block_tree  # noqa: E402
 
@@ -43,6 +44,8 @@ def main() -> int:
     nonfinite_state_count = jnp.zeros((), dtype=jnp.int32)
     three_or_more_contact_total = jnp.zeros(())
     robot_box_contact_total = jnp.zeros(())
+    first_align_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
+    base_to_prepush_at_align = jnp.asarray(jnp.nan)
     first_robot_box_contact_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
     base_to_prepush_at_first_contact = jnp.asarray(jnp.nan)
     first_object_motion_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
@@ -63,6 +66,18 @@ def main() -> int:
         )
         three_or_more_contact_total += jnp.mean(
             jnp.sum(state.info["last_contact"], axis=-1) >= 3
+        )
+        any_align = jnp.any(state.info["phase"] >= int(TaskPhase.ALIGN))
+        first_align_now = any_align & (first_align_step > args.num_steps)
+        first_align_step = jnp.where(
+            first_align_now,
+            step_index + 1,
+            first_align_step,
+        )
+        base_to_prepush_at_align = jnp.where(
+            first_align_now,
+            jnp.mean(state.metrics["base_to_prepush_distance"]),
+            base_to_prepush_at_align,
         )
         contact = state.data._impl.contact
         geom1, geom2 = contact.geom[:, :, 0], contact.geom[:, :, 1]
@@ -149,6 +164,15 @@ def main() -> int:
         "mean_object_displacement": float(jnp.mean(object_displacement)),
         "max_object_displacement": float(jnp.max(object_displacement)),
         "robot_box_contact_fraction": float(robot_box_contact_total / args.num_steps),
+        "final_phase": int(jnp.max(state.info["phase"])),
+        "first_align_step": (
+            None if int(first_align_step) > args.num_steps else int(first_align_step)
+        ),
+        "base_to_prepush_at_align": (
+            None
+            if int(first_align_step) > args.num_steps
+            else float(base_to_prepush_at_align)
+        ),
         "first_robot_box_contact_step": (
             None
             if int(first_robot_box_contact_step) > args.num_steps

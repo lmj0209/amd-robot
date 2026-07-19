@@ -42,7 +42,22 @@ def test_push_step_allows_box_floor_contact_and_stays_finite():
     assert nxt.metrics["illegal_contact"] == 0.0
     assert nxt.metrics["nonfinite_state"] == 0.0
     assert nxt.metrics["object_displacement"] < 1.0e-3
+    assert nxt.info["phase"] == int(TaskPhase.APPROACH)
+    assert jnp.isclose(nxt.info["command"][0], 0.025)
     assert jnp.allclose(nxt.data.ctrl[12:], env._home_ctrl[12:])
+    assert _tree_is_finite(nxt.data)
+
+
+def test_push_enters_align_and_stops_crawl_before_contact():
+    env = Go2Z1PushEnv(approach_stop_distance=1.0)
+    state = jax.jit(env.reset)(jax.random.PRNGKey(0))
+    nxt = jax.jit(env.step)(state, jnp.zeros(env.action_size))
+    _block_tree(nxt)
+
+    assert nxt.info["phase"] == int(TaskPhase.ALIGN)
+    assert jnp.allclose(nxt.info["command"], 0.0)
+    assert nxt.metrics["task_phase"] == float(TaskPhase.ALIGN)
+    assert nxt.metrics["object_displacement"] < 1.0e-3
     assert _tree_is_finite(nxt.data)
 
 

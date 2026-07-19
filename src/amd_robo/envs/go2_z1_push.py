@@ -8,18 +8,18 @@ import jax
 import jax.numpy as jnp
 import mujoco
 
+from amd_robo.contracts import TaskPhase
 from amd_robo.envs.go2_z1 import REPO_ROOT, _rotmat
 from amd_robo.envs.go2_z1_locomotion import Go2Z1LocomotionEnv
 
-DEFAULT_PUSH_XML = (
-    REPO_ROOT / "assets" / "menagerie" / "go2_z1" / "scene_push_mjx.xml"
-)
+DEFAULT_PUSH_XML = REPO_ROOT / "assets" / "menagerie" / "go2_z1" / "scene_push_mjx.xml"
 PUSH_HOME_KEYFRAME = "push_home"
 PUSH_BOX_BODY_NAME = "push_box_body"
 PUSH_BOX_JOINT_NAME = "push_box_joint"
 PUSH_BOX_GEOM_NAME = "push_box"
 PREPUSH_SITE_NAME = "prepush_site"
 GOAL_SITE_NAME = "goal_site"
+DEFAULT_APPROACH_STOP_DISTANCE = 0.2
 
 
 class Go2Z1PushEnv(Go2Z1LocomotionEnv):
@@ -30,8 +30,12 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
     def __init__(
         self,
         xml_path: str | Path = DEFAULT_PUSH_XML,
+        approach_stop_distance: float = DEFAULT_APPROACH_STOP_DISTANCE,
         **kwargs,
     ) -> None:
+        if approach_stop_distance <= 0.0:
+            raise ValueError("approach stop distance must be positive")
+        self._approach_stop_distance = float(approach_stop_distance)
         kwargs.setdefault("home_keyframe", PUSH_HOME_KEYFRAME)
         kwargs.setdefault("ctrl_dt", 0.01)
         kwargs.setdefault("action_scale", 0.1)
@@ -66,9 +70,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         self._prepush_site_id = self._required_id(
             mujoco.mjtObj.mjOBJ_SITE, PREPUSH_SITE_NAME
         )
-        self._goal_site_id = self._required_id(
-            mujoco.mjtObj.mjOBJ_SITE, GOAL_SITE_NAME
-        )
+        self._goal_site_id = self._required_id(mujoco.mjtObj.mjOBJ_SITE, GOAL_SITE_NAME)
         if self.mj_model.jnt_type[self._box_joint_id] != mujoco.mjtJoint.mjJNT_FREE:
             raise ValueError("push box joint must be free")
         self._box_qpos_adr = int(self.mj_model.jnt_qposadr[self._box_joint_id])
@@ -97,7 +99,29 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         return self._with_task_state(super().reset(rng))
 
     def step(self, state, action: jax.Array):
-        return self._with_task_state(super().step(state, action))
+        prepush_position = state.data.site_xpos[self._prepush_site_id]
+        base_to_prepush = jnp.linalg.norm(state.data.qpos[:2] - prepush_position[:2])
+        enter_align = (state.info["phase"] == int(TaskPhase.APPROACH)) & (
+            base_to_prepush <= self._approach_stop_distance
+        )
+        phase = jnp.where(
+            enter_align,
+            int(TaskPhase.ALIGN),
+            state.info["phase"],
+        )
+        command = jnp.where(
+            phase == int(TaskPhase.APPROACH),
+            state.info["command"],
+            jnp.zeros_like(state.info["command"]),
+        )
+        staged = state.replace(
+            info={
+                **state.info,
+                "phase": phase,
+                "command": command,
+            }
+        )
+        return self._with_task_state(super().step(staged, action))
 
     def _task_vectors(self, data):
         world_to_base = _rotmat(data.qpos[3:7]).T
@@ -176,6 +200,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
                 object_qpos[:2] - self._initial_box_qpos[:2]
             ),
             "object_height": object_position[2],
+            "approach_stop_distance": jnp.asarray(self._approach_stop_distance),
+            "task_phase": info["phase"].astype(jnp.float32),
         }
         return state.replace(
             obs=self._observation(
