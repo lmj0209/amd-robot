@@ -24,11 +24,17 @@ def main() -> int:
     parser.add_argument("--num-envs", type=int, default=1)
     parser.add_argument("--num-steps", type=int, default=10)
     parser.add_argument("--seed", type=int, default=20260719)
+    parser.add_argument("--approach-stop-distance", type=float)
     args = parser.parse_args()
     if args.num_envs <= 0 or args.num_steps <= 0:
         parser.error("num-envs and num-steps must be positive")
+    if args.approach_stop_distance is not None and args.approach_stop_distance <= 0.0:
+        parser.error("approach-stop-distance must be positive")
 
-    env = Go2Z1PushEnv()
+    env_kwargs = {}
+    if args.approach_stop_distance is not None:
+        env_kwargs["approach_stop_distance"] = args.approach_stop_distance
+    env = Go2Z1PushEnv(**env_kwargs)
     reset_fn = jax.jit(jax.vmap(env.reset))
     step_fn = jax.jit(jax.vmap(env.step))
     keys = jax.random.split(jax.random.PRNGKey(args.seed), args.num_envs)
@@ -162,6 +168,7 @@ def main() -> int:
         "observation_size": env.observation_size,
         "physics_substeps": env.n_substeps,
         "solver_iterations": int(env.mj_model.opt.iterations),
+        "approach_stop_distance": float(env._approach_stop_distance),
         "initial_base_to_prepush_distance": float(initial_prepush_distance),
         "minimum_base_to_prepush_distance": float(minimum_prepush_distance),
         "final_base_to_prepush_distance": float(
