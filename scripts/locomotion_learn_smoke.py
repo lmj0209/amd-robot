@@ -124,6 +124,10 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
         forward_velocity_total = jnp.zeros(())
         tracking_error_total = jnp.zeros(())
         tilt_total = jnp.zeros(())
+        crawl_reference_error_total = jnp.zeros(())
+        has_crawl_reference_error = (
+            "crawl_reference_error_rms" in state.metrics
+        )
         done_count = jnp.zeros((), dtype=jnp.int32)
         illegal_contact_count = jnp.zeros((), dtype=jnp.int32)
         nonfinite_state_count = jnp.zeros((), dtype=jnp.int32)
@@ -165,6 +169,10 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             forward_velocity_total += jnp.mean(state.metrics["base_forward_velocity"])
             tracking_error_total += jnp.mean(state.metrics["tracking_linear_error"])
             tilt_total += jnp.mean(state.metrics["tilt_deg"])
+            if has_crawl_reference_error:
+                crawl_reference_error_total += jnp.mean(
+                    state.metrics["crawl_reference_error_rms"]
+                )
             done_count += jnp.sum(state.done.astype(jnp.int32))
             illegal_contact_count += jnp.sum(
                 state.metrics["illegal_contact"].astype(jnp.int32)
@@ -290,6 +298,10 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             ),
             "zero_contact_fraction": float(zero_contact_total / n_steps),
         }
+        if has_crawl_reference_error:
+            results[name]["mean_crawl_reference_error_rms"] = float(
+                crawl_reference_error_total / n_steps
+            )
         for index, foot_name in enumerate(FOOT_SITE_NAMES):
             completed_swing_count = jnp.maximum(touchdown_count[index], 1)
             results[name].update(

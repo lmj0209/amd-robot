@@ -166,6 +166,9 @@ def main() -> int:
     max_abs_reward_components = {key: 0.0 for key in reward_metric_names}
     max_feet_air_time = 0.0
     max_swing_peak = 0.0
+    crawl_reference_error_total = jnp.zeros(())
+    max_crawl_reference_error = 0.0
+    has_crawl_reference_error = "crawl_reference_error_rms" in state.metrics
     previous_contact = None
     liftoff_count = jnp.zeros(4, dtype=jnp.int32)
     touchdown_count = jnp.zeros(4, dtype=jnp.int32)
@@ -222,6 +225,13 @@ def main() -> int:
             max_swing_peak,
             float(jnp.max(state.info["swing_peak"]).block_until_ready()),
         )
+        if has_crawl_reference_error:
+            crawl_reference_error = state.metrics["crawl_reference_error_rms"]
+            crawl_reference_error_total += jnp.mean(crawl_reference_error)
+            max_crawl_reference_error = max(
+                max_crawl_reference_error,
+                float(jnp.max(crawl_reference_error).block_until_ready()),
+            )
         foot_contact = state.info["last_contact"]
         if previous_contact is not None:
             liftoff_count += jnp.sum(
@@ -274,6 +284,7 @@ def main() -> int:
         "crawl_shift": args.crawl_shift,
         "crawl_lift": args.crawl_lift,
         "crawl_min_air_time": args.crawl_min_air_time,
+        "crawl_pose_reference": args.crawl_pose_reference,
         "command_x_override": args.command_x,
         "done_count": done_count,
         "illegal_contact_count": illegal_contact_count,
@@ -321,6 +332,11 @@ def main() -> int:
         "resample_actions": args.resample_actions,
         "training_wrapper": args.training_wrapper,
     }
+    if has_crawl_reference_error:
+        report["mean_crawl_reference_error_rms"] = float(
+            crawl_reference_error_total / args.num_steps
+        )
+        report["max_crawl_reference_error_rms"] = max_crawl_reference_error
     print(f"LOCOMOTION_PREFLIGHT {json.dumps(report, sort_keys=True)}", flush=True)
     return int(
         report["observation_size"] != env.observation_size

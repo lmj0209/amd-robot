@@ -775,6 +775,41 @@ def test_crawl_pose_reference_adds_only_the_reference_target_switch() -> None:
     assert reference_reward == tracking_reward
 
 
+def test_crawl_residual_regularization_changes_only_action_cost() -> None:
+    reference = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_pose_reference_qualification.yaml"
+        ).read_text()
+    )
+    regularized = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_residual_regularized_qualification.yaml"
+        ).read_text()
+    )
+
+    for section in (
+        "environment",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert regularized[section] == reference[section]
+
+    assert reference["reward"]["action_magnitude_cost_scale"] == 0.001
+    assert regularized["reward"]["action_magnitude_cost_scale"] == 0.01
+    reference_reward = dict(reference["reward"])
+    regularized_reward = dict(regularized["reward"])
+    reference_reward["action_magnitude_cost_scale"] = 0.01
+    reference_reward.pop("profile")
+    regularized_reward.pop("profile")
+    assert regularized_reward == reference_reward
+
+
 def test_trot_dwell_qualification_adds_only_minimum_air_time() -> None:
     timing = yaml.safe_load(
         (
