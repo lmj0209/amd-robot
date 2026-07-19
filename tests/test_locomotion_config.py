@@ -658,7 +658,7 @@ def test_foot_space_reference_qualification_freezes_cpu_gate_parameters() -> Non
     assert environment["crawl_lift_end_fraction"] == 0.85
     assert environment["crawl_pose_reference_enabled"] is True
     assert config["manual_evaluation"]["fixed_command"] == [0.025, 0.0, 0.0]
-    assert config["rocm_guardrails"]["max_training_steps_per_host_call"] == 2
+    assert config["rocm_guardrails"]["max_training_steps_per_host_call"] == 1
     assert config["checkpoint"]["scope"] == "full_training_session"
 
 

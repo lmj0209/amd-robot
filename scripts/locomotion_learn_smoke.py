@@ -387,6 +387,7 @@ def main() -> int:
     parser.add_argument("--skip-eval", action="store_true")
     parser.add_argument("--training-state-dir")
     parser.add_argument("--resume-training-state")
+    parser.add_argument("--checkpoint-interval-steps", type=int)
     parser.add_argument(
         "--migrate-missing-nonfinite-state",
         action="store_true",
@@ -410,6 +411,11 @@ def main() -> int:
     guardrails = config["rocm_guardrails"]
     evaluation = config["manual_evaluation"]
     checkpoint = config["checkpoint"]
+    checkpoint_interval_steps = (
+        checkpoint["interval_steps"]
+        if args.checkpoint_interval_steps is None
+        else args.checkpoint_interval_steps
+    )
     num_timesteps = (
         ppo_config["num_timesteps"]
         if args.num_timesteps is None
@@ -481,6 +487,7 @@ def main() -> int:
         or num_envs <= 0
         or batch_size <= 0
         or num_minibatches <= 0
+        or checkpoint_interval_steps <= 0
         or not policy_hidden_layer_sizes
         or not value_hidden_layer_sizes
         or any(size <= 0 for size in policy_hidden_layer_sizes)
@@ -488,7 +495,7 @@ def main() -> int:
     ):
         parser.error(
             "timesteps must be non-negative; episode length and learning rate "
-            "and PPO batch and network dimensions must be positive"
+            "and PPO batch, network, and checkpoint dimensions must be positive"
         )
     if batch_size * num_minibatches % num_envs:
         parser.error("batch_size * num_minibatches must be divisible by num_envs")
@@ -541,6 +548,7 @@ def main() -> int:
         f"normalize_observations={normalize_observations} "
         f"policy_hidden_layer_sizes={policy_hidden_layer_sizes} "
         f"value_hidden_layer_sizes={value_hidden_layer_sizes} "
+        f"checkpoint_interval_steps={checkpoint_interval_steps} "
         f"config={args.config} config_sha256={config_sha256} "
         f"seed={config['seed']} "
         f"matmul_precision="
@@ -605,11 +613,12 @@ def main() -> int:
             "normalize_observations": normalize_observations,
             "policy_hidden_layer_sizes": policy_hidden_layer_sizes,
             "value_hidden_layer_sizes": value_hidden_layer_sizes,
+            "checkpoint_interval_steps": checkpoint_interval_steps,
             "seed": config["seed"],
         }
         training_session_fn = make_training_session_checkpoint_callback(
             args.training_state_dir,
-            interval_steps=checkpoint["interval_steps"],
+            interval_steps=checkpoint_interval_steps,
             metadata=metadata,
             announce=lambda message: print(message, flush=True),
         )
