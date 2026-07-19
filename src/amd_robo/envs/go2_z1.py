@@ -62,6 +62,7 @@ class Go2Z1Env(MjxEnv):
         action_scale: float = 0.25,
         leg_kp: float | None = None,
         leg_kd: float | None = None,
+        home_keyframe: str | None = "home",
         tilt_limit_deg: float = 60.0,
         mask_arm: bool = True,
         foot_condim: int | None = None,
@@ -90,17 +91,53 @@ class Go2Z1Env(MjxEnv):
                 if geom_id < 0:
                     raise ValueError(f"foot geom not found: {name}")
                 self._mj_model.geom_condim[geom_id] = foot_condim
-        self._mjx_model = mjx.put_model(self._mj_model, impl="jax")
+        if home_keyframe is None:
+            home_keyframe_id = -1
+        else:
+            home_keyframe_id = mujoco.mj_name2id(
+                self._mj_model,
+                mujoco.mjtObj.mjOBJ_KEY,
+                home_keyframe,
+            )
+            if home_keyframe_id < 0:
+                raise ValueError(f"home keyframe not found: {home_keyframe}")
+        self._home_keyframe = home_keyframe
+        self._home_keyframe_id = home_keyframe_id
         self._home_qpos = jnp.asarray(
-            self._mj_model.key_qpos[0]
-            if self._mj_model.nkey > 0
+            self._mj_model.key_qpos[home_keyframe_id]
+            if home_keyframe_id >= 0
             else self._mj_model.qpos0
         )
         self._home_ctrl = (
-            jnp.asarray(self._mj_model.key_ctrl[0])
-            if self._mj_model.nkey > 0 and self._mj_model.key_ctrl.shape[1] > 0
+            jnp.asarray(self._mj_model.key_ctrl[home_keyframe_id])
+            if home_keyframe_id >= 0 and self._mj_model.key_ctrl.shape[1] > 0
             else jnp.zeros(self._mj_model.nu)
         )
+        if any(
+            transmission != mujoco.mjtTrn.mjTRN_JOINT
+            for transmission in self._mj_model.actuator_trntype
+        ):
+            raise ValueError("all policy actuators must use joint transmission")
+        actuator_joint_ids = tuple(
+            int(joint_id) for joint_id in self._mj_model.actuator_trnid[:, 0]
+        )
+        if len(set(actuator_joint_ids)) != ACTION_LAYOUT.size:
+            raise ValueError("policy actuators must map to 19 unique joints")
+        if any(
+            self._mj_model.jnt_type[joint_id]
+            not in (mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE)
+            for joint_id in actuator_joint_ids
+        ):
+            raise ValueError("policy actuator joints must have one DoF")
+        self._joint_qpos_indices = jnp.asarray(
+            self._mj_model.jnt_qposadr[list(actuator_joint_ids)],
+            dtype=jnp.int32,
+        )
+        self._joint_dof_indices = jnp.asarray(
+            self._mj_model.jnt_dofadr[list(actuator_joint_ids)],
+            dtype=jnp.int32,
+        )
+        self._mjx_model = mjx.put_model(self._mj_model, impl="jax")
         self._action_scale = float(action_scale)
         self._leg_kp = (
             float(self._mj_model.actuator_gainprm[0, 0])
@@ -225,9 +262,9 @@ class Go2Z1Env(MjxEnv):
         projected_gravity = r_inv @ jnp.asarray([0.0, 0.0, -1.0])
         base_lin_vel = r_inv @ qvel[0:3]
         base_ang_vel = r_inv @ qvel[3:6]
-        joint_pos = qpos[7:]  # 19 joints after the freejoint
-        joint_vel = qvel[6:]
-        joint_pos_error = joint_pos - self._home_qpos[7:]
+        joint_pos = qpos[self._joint_qpos_indices]
+        joint_vel = qvel[self._joint_dof_indices]
+        joint_pos_error = joint_pos - self._home_qpos[self._joint_qpos_indices]
         phase_onehot = jax.nn.one_hot(phase, len(TaskPhase))
         obs = jnp.concatenate(
             [

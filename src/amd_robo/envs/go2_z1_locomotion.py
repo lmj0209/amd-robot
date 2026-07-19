@@ -18,7 +18,7 @@ from mujoco import mjx
 
 from amd_robo.contracts import ACTION_LAYOUT
 from amd_robo.envs.go2_kinematics import go2_foot_space_crawl_reference
-from amd_robo.envs.go2_z1 import FOOT_GEOM_NAMES, Go2Z1Env, _LEG_MASK, _rotmat
+from amd_robo.envs.go2_z1 import _LEG_MASK, FOOT_GEOM_NAMES, Go2Z1Env, _rotmat
 
 FOOT_SITE_NAMES = ("FL_foot", "FR_foot", "RL_foot", "RR_foot")
 _CRAWL_SEQUENCE = jnp.asarray([0, 3, 1, 2], dtype=jnp.int32)
@@ -258,6 +258,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             ],
             dtype=jnp.int32,
         )
+        self._allowed_floor_geom_ids = self._foot_geom_ids
         self._foot_site_ids = jnp.asarray(
             [
                 mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, site_name)
@@ -334,8 +335,12 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                 maxval=0.05,
             )
             data = data.replace(
-                qpos=data.qpos.at[7:].add(joint_delta * leg_mask),
-                qvel=data.qvel.at[6:].set(joint_velocity * leg_mask),
+                qpos=data.qpos.at[self._joint_qpos_indices].add(
+                    joint_delta * leg_mask
+                ),
+                qvel=data.qvel.at[self._joint_dof_indices].set(
+                    joint_velocity * leg_mask
+                ),
             )
             data = mjx.forward(self.mjx_model, data)
 
@@ -349,7 +354,9 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                     self._crawl_foot_space_solution(gait_phase)
                 )
             data = data.replace(
-                qpos=data.qpos.at[7:19].add(crawl_reference),
+                qpos=data.qpos.at[self._joint_qpos_indices[:12]].add(
+                    crawl_reference
+                ),
                 ctrl=data.ctrl.at[:12].add(crawl_reference),
             )
             data = mjx.forward(self.mjx_model, data)
@@ -409,8 +416,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                 )
             if self._crawl_pose_reference_enabled:
                 reference_error = (
-                    data.qpos[7:19]
-                    - self._home_qpos[7:19]
+                    data.qpos[self._joint_qpos_indices[:12]]
+                    - self._home_qpos[self._joint_qpos_indices[:12]]
                     - crawl_reference
                 )
                 metrics["crawl_reference_error_rms"] = jnp.sqrt(
@@ -601,8 +608,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                 )
             if self._crawl_pose_reference_enabled:
                 reference_error = (
-                    stepped.data.qpos[7:19]
-                    - self._home_qpos[7:19]
+                    stepped.data.qpos[self._joint_qpos_indices[:12]]
+                    - self._home_qpos[self._joint_qpos_indices[:12]]
                     - crawl_reference
                 )
                 metrics["crawl_reference_error_rms"] = jnp.sqrt(
@@ -663,11 +670,12 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         geom1, geom2 = contact.geom[:, 0], contact.geom[:, 1]
         floor_contact = (geom1 == self._floor_geom_id) | (geom2 == self._floor_geom_id)
         other_geom = jnp.where(geom1 == self._floor_geom_id, geom2, geom1)
-        allowed_foot = jnp.any(
-            other_geom[:, None] == self._foot_geom_ids[None, :], axis=1
+        allowed_floor_geom = jnp.any(
+            other_geom[:, None] == self._allowed_floor_geom_ids[None, :],
+            axis=1,
         )
         active = contact.dist < 0.0
-        return jnp.any(active & floor_contact & ~allowed_foot)
+        return jnp.any(active & floor_contact & ~allowed_floor_geom)
 
     def _foot_floor_contacts(self, data) -> jax.Array:
         contact = data._impl.contact
@@ -707,7 +715,10 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         pose_weight = jnp.asarray([1.0, 1.0, 0.1] * 4)
         command_norm = jnp.linalg.norm(command)
         moving = command_norm > 0.01
-        home_position_error = data.qpos[7:19] - self._home_qpos[7:19]
+        leg_qpos_indices = self._joint_qpos_indices[:12]
+        home_position_error = (
+            data.qpos[leg_qpos_indices] - self._home_qpos[leg_qpos_indices]
+        )
         leg_position_error = home_position_error
         if self._crawl_pose_reference_enabled:
             reference_position_error = home_position_error - crawl_reference

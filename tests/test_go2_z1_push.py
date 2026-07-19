@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+import jax
+import jax.numpy as jnp
+
+from amd_robo.contracts import TaskPhase
+from amd_robo.envs.go2_z1_push import Go2Z1PushEnv
+from amd_robo.platform.smoke import _block_tree, _tree_is_finite
+
+
+def test_push_reset_uses_named_keyframe_and_exposes_task_state():
+    env = Go2Z1PushEnv()
+    state = jax.jit(env.reset)(jax.random.PRNGKey(0))
+    _block_tree(state)
+
+    assert env.action_size == 19
+    assert env.observation_size == 84
+    assert state.obs.shape == (84,)
+    assert env._home_keyframe == "push_home"
+    assert env._joint_qpos_indices.shape == (19,)
+    assert env._joint_dof_indices.shape == (19,)
+    assert not jnp.any(env._joint_qpos_indices == env._box_qpos_adr)
+    assert state.info["phase"] == int(TaskPhase.APPROACH)
+    assert jnp.allclose(
+        state.info["object_qpos"],
+        jnp.asarray([0.8, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0]),
+    )
+    assert jnp.allclose(state.info["object_pos"], jnp.asarray([0.8, 0.0, 0.1]))
+    assert jnp.allclose(state.info["prepush_pos"], jnp.asarray([0.5, 0.0, 0.015]))
+    assert jnp.allclose(state.info["goal_pos"], jnp.asarray([1.2, 0.0, 0.005]))
+    assert jnp.isclose(state.metrics["base_to_prepush_distance"], 0.5)
+    assert jnp.isclose(state.metrics["object_to_goal_distance"], 0.4)
+    assert _tree_is_finite(state.data)
+
+
+def test_push_step_allows_box_floor_contact_and_stays_finite():
+    env = Go2Z1PushEnv()
+    state = jax.jit(env.reset)(jax.random.PRNGKey(0))
+    nxt = jax.jit(env.step)(state, jnp.zeros(env.action_size))
+    _block_tree(nxt)
+
+    assert nxt.metrics["illegal_contact"] == 0.0
+    assert nxt.metrics["nonfinite_state"] == 0.0
+    assert nxt.metrics["object_displacement"] < 1.0e-3
+    assert jnp.allclose(nxt.data.ctrl[12:], env._home_ctrl[12:])
+    assert _tree_is_finite(nxt.data)
+
+
+def test_push_reset_and_step_are_finite_under_vmap():
+    env = Go2Z1PushEnv()
+    keys = jax.random.split(jax.random.PRNGKey(0), 2)
+    state = jax.jit(jax.vmap(env.reset))(keys)
+    actions = jnp.zeros((2, env.action_size))
+    nxt = jax.jit(jax.vmap(env.step))(state, actions)
+    _block_tree(nxt)
+
+    assert nxt.obs.shape == (2, env.observation_size)
+    assert jnp.all(nxt.metrics["illegal_contact"] == 0.0)
+    assert jnp.all(nxt.metrics["nonfinite_state"] == 0.0)
+    assert _tree_is_finite(nxt.data)
