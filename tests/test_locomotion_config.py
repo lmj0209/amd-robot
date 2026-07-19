@@ -363,3 +363,41 @@ def test_network_extension_changes_only_additional_budget() -> None:
             qualification_values.pop(key)
             extension_values.pop(key)
         assert extension_values == qualification_values
+
+
+def test_adaptive_kl_qualification_changes_only_lr_schedule() -> None:
+    fixed = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_network_qualification.yaml"
+        ).read_text()
+    )
+    adaptive = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_adaptive_kl_qualification.yaml"
+        ).read_text()
+    )
+
+    assert fixed["ppo"]["learning_rate_schedule"] == "NONE"
+    assert adaptive["ppo"]["learning_rate_schedule"] == "ADAPTIVE_KL"
+    for section in (
+        "environment",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert adaptive[section] == fixed[section]
+
+    for section, changed_keys in (
+        ("reward", {"profile"}),
+        ("ppo", {"learning_rate_schedule"}),
+    ):
+        fixed_values = dict(fixed[section])
+        adaptive_values = dict(adaptive[section])
+        for key in changed_keys:
+            fixed_values.pop(key)
+            adaptive_values.pop(key)
+        assert adaptive_values == fixed_values

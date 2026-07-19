@@ -45,6 +45,11 @@ and RGC system fingerprint.
   from the complete large-network qualification session to 5,242,880 total
   steps. It changes only the additional training budget and retains
   per-update KL/standard-deviation stop gates.
+- `locomotion_stage1_adaptive_kl_qualification.yaml`: a fresh 524,288-step
+  qualification after the fixed-rate network extension crossed its KL stop
+  gate. It changes only the Brax learning-rate schedule from `NONE` to
+  `ADAPTIVE_KL`, matching the stability mechanism used by the ATEC RSL-RL
+  velocity baseline while preserving the ROCm host-loop contract.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.
