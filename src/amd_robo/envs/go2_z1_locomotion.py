@@ -73,6 +73,9 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         gait_cycle_time: float | None = None,
         trot_contact_scale: float = 0.0,
         trot_swing_height_cost_scale: float = 0.0,
+        trot_timing_scale: float = 0.0,
+        trot_timing_std: float = 0.1,
+        trot_timing_max_error: float = 0.2,
         termination_cost_scale: float = 2.0,
         illegal_contact_cost_scale: float = 2.0,
         workspace_limit: float = 5.0,
@@ -90,10 +93,18 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             raise ValueError("moving_pose_multiplier must be in [0, 1]")
         if gait_cycle_time is not None and gait_cycle_time <= 0.0:
             raise ValueError("gait_cycle_time must be positive when enabled")
-        if trot_contact_scale < 0.0 or trot_swing_height_cost_scale < 0.0:
+        if (
+            trot_contact_scale < 0.0
+            or trot_swing_height_cost_scale < 0.0
+            or trot_timing_scale < 0.0
+        ):
             raise ValueError("trot reward scales must be non-negative")
+        if trot_timing_std <= 0.0 or trot_timing_max_error <= 0.0:
+            raise ValueError("trot timing std and max error must be positive")
         if gait_cycle_time is None and (
-            trot_contact_scale > 0.0 or trot_swing_height_cost_scale > 0.0
+            trot_contact_scale > 0.0
+            or trot_swing_height_cost_scale > 0.0
+            or trot_timing_scale > 0.0
         ):
             raise ValueError("trot reward scales require gait_cycle_time")
         if workspace_limit <= 0.0:
@@ -112,9 +123,14 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         self._gait_cycle_time = (
             None if gait_cycle_time is None else float(gait_cycle_time)
         )
+        self._trot_timing_enabled = trot_timing_scale > 0.0
+        self._trot_timing_std = float(trot_timing_std)
+        self._trot_timing_max_error = float(trot_timing_max_error)
         self._reward_names = self._BASE_REWARD_NAMES
         if self._gait_cycle_time is not None:
             self._reward_names += ("trot_contact", "trot_swing_height")
+        if self._trot_timing_enabled:
+            self._reward_names += ("trot_timing",)
         self._reward_scales = {
             "tracking_linear_velocity": float(tracking_linear_velocity_scale),
             "tracking_angular_velocity": float(tracking_angular_velocity_scale),
@@ -141,6 +157,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                     "trot_swing_height": -float(trot_swing_height_cost_scale),
                 }
             )
+        if self._trot_timing_enabled:
+            self._reward_scales["trot_timing"] = float(trot_timing_scale)
         self._max_foot_height = float(max_foot_height)
         self._workspace_limit = float(workspace_limit)
 
@@ -251,6 +269,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         }
         if gait_phase is not None:
             info["gait_phase"] = gait_phase
+        if self._trot_timing_enabled:
+            info["feet_contact_time"] = jnp.zeros(len(FOOT_SITE_NAMES))
         metrics = {
             **state.metrics,
             "command_x": command[0],
@@ -298,6 +318,12 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         contact_filt = foot_contact | state.info["last_contact"]
         first_contact = (state.info["feet_air_time"] > 0.0) & contact_filt
         feet_air_time = state.info["feet_air_time"] + self.dt
+        current_air_time = feet_air_time * ~foot_contact
+        current_contact_time = None
+        if self._trot_timing_enabled:
+            current_contact_time = (
+                state.info["feet_contact_time"] + self.dt
+            ) * foot_contact
         foot_height = stepped.data.site_xpos[self._foot_site_ids, -1]
         swing_peak = jnp.maximum(state.info["swing_peak"], foot_height)
         illegal_contact = self._has_illegal_floor_contact(stepped.data)
@@ -327,6 +353,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             feet_air_time,
             swing_peak,
             state.info.get("gait_phase"),
+            current_air_time,
+            current_contact_time,
         )
         scaled_components = {
             name: jnp.nan_to_num(
@@ -359,12 +387,14 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             # base environment has already masked [12:19] before applying ctrl.
             "last_action": policy_action,
             "last_last_action": previous_action,
-            "feet_air_time": feet_air_time * ~foot_contact,
+            "feet_air_time": current_air_time,
             "last_contact": foot_contact,
             "swing_peak": swing_peak * ~foot_contact,
         }
         if next_gait_phase is not None:
             info["gait_phase"] = next_gait_phase
+        if current_contact_time is not None:
+            info["feet_contact_time"] = current_contact_time
         metrics = {
             **stepped.metrics,
             "command_x": info["command"][0],
@@ -467,6 +497,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         feet_air_time,
         swing_peak,
         gait_phase,
+        current_air_time,
+        current_contact_time,
     ) -> dict[str, jax.Array]:
         local_linvel = self._local_linear_velocity(data)
         local_angvel = self._local_angular_velocity(data)
@@ -533,6 +565,18 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                     ),
                 }
             )
+        if current_contact_time is not None:
+            upright = jnp.clip(-projected_gravity[2], 0.0, 0.7) / 0.7
+            components["trot_timing"] = (
+                self._trot_timing_score(
+                    current_air_time,
+                    current_contact_time,
+                    self._trot_timing_std,
+                    self._trot_timing_max_error,
+                )
+                * moving
+                * upright
+            )
         return components
 
     @staticmethod
@@ -545,4 +589,41 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                 ~diagonal_a_stance,
                 diagonal_a_stance,
             ]
+        )
+
+    @staticmethod
+    def _trot_timing_score(
+        air_time: jax.Array,
+        contact_time: jax.Array,
+        std: float,
+        max_error: float,
+    ) -> jax.Array:
+        """Reward diagonal-pair timing agreement and pair opposition."""
+
+        max_squared_error = max_error**2
+
+        def squared_error(first, second):
+            return jnp.minimum(jnp.square(first - second), max_squared_error)
+
+        def sync_reward(first: int, second: int):
+            error = squared_error(
+                air_time[first], air_time[second]
+            ) + squared_error(contact_time[first], contact_time[second])
+            return jnp.exp(-error / std)
+
+        def async_reward(first: int, second: int):
+            error = squared_error(
+                air_time[first], contact_time[second]
+            ) + squared_error(contact_time[first], air_time[second])
+            return jnp.exp(-error / std)
+
+        # FL+RR and FR+RL are internally synchronized. Every cross-pair
+        # combination is expected to be in the opposite contact mode.
+        return (
+            sync_reward(0, 3)
+            * sync_reward(1, 2)
+            * async_reward(0, 1)
+            * async_reward(3, 2)
+            * async_reward(0, 2)
+            * async_reward(1, 3)
         )

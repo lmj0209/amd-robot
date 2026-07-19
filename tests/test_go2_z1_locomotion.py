@@ -53,6 +53,8 @@ def test_trot_phase_is_opt_in_and_preserves_the_action_contract() -> None:
     assert legacy.observation_size == 73
     assert "gait_phase" not in legacy_state.info
     assert "reward/trot_contact" not in legacy_state.metrics
+    assert "feet_contact_time" not in legacy_state.info
+    assert "reward/trot_timing" not in legacy_state.metrics
 
     env = Go2Z1LocomotionEnv(
         command_override=(0.4, 0.0, 0.0),
@@ -73,6 +75,8 @@ def test_trot_phase_is_opt_in_and_preserves_the_action_contract() -> None:
     assert jnp.isfinite(nxt.metrics["reward/trot_contact"])
     assert jnp.isfinite(nxt.metrics["reward/trot_swing_height"])
     assert _tree_is_finite(nxt.data)
+    assert "feet_contact_time" not in nxt.info
+    assert "reward/trot_timing" not in nxt.metrics
 
 
 def test_trot_phase_alternates_diagonal_contact_targets() -> None:
@@ -92,6 +96,11 @@ def test_trot_phase_alternates_diagonal_contact_targets() -> None:
             {"trot_swing_height_cost_scale": 0.1},
             "trot reward scales require gait_cycle_time",
         ),
+        ({"trot_timing_std": 0.0}, "trot timing std and max error must be positive"),
+        (
+            {"trot_timing_scale": 1.0},
+            "trot reward scales require gait_cycle_time",
+        ),
     ),
 )
 def test_trot_parameters_reject_invalid_combinations(
@@ -100,3 +109,39 @@ def test_trot_parameters_reject_invalid_combinations(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         Go2Z1LocomotionEnv(**kwargs)
+
+
+def test_trot_timing_is_opt_in_and_finite() -> None:
+    env = Go2Z1LocomotionEnv(
+        command_override=(0.4, 0.0, 0.0),
+        randomize_reset=False,
+        gait_cycle_time=0.5,
+        trot_timing_scale=1.0,
+        trot_timing_std=0.1,
+        trot_timing_max_error=0.2,
+    )
+    state = jax.jit(env.reset)(jax.random.PRNGKey(0))
+    nxt = jax.jit(env.step)(state, jnp.zeros(env.action_size))
+    _block_tree(nxt)
+
+    assert state.info["feet_contact_time"].shape == (4,)
+    assert nxt.info["feet_contact_time"].shape == (4,)
+    assert jnp.isfinite(nxt.metrics["reward/trot_timing"])
+
+
+def test_trot_timing_prefers_alternating_diagonal_pairs_over_standing() -> None:
+    alternating = Go2Z1LocomotionEnv._trot_timing_score(
+        air_time=jnp.asarray([0.0, 0.2, 0.2, 0.0]),
+        contact_time=jnp.asarray([0.2, 0.0, 0.0, 0.2]),
+        std=0.1,
+        max_error=0.2,
+    )
+    standing = Go2Z1LocomotionEnv._trot_timing_score(
+        air_time=jnp.zeros(4),
+        contact_time=jnp.full(4, 0.2),
+        std=0.1,
+        max_error=0.2,
+    )
+
+    assert jnp.isclose(alternating, 1.0)
+    assert alternating > standing

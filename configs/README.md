@@ -65,6 +65,11 @@ and RGC system fingerprint.
   to continuous four-foot contact. It retains the low-rate safety settings,
   adds an observed 0.5-second gait phase, and alternates diagonal FL+RR and
   FR+RL contact/swing targets. The frozen action interface remains 19-D.
+- `locomotion_stage1_trot_timing_qualification.yaml`: replaces the rejected
+  instantaneous contact-match reward with a continuous contact/air-time
+  consistency score. It synchronizes FL+RR and FR+RL internally while
+  rewarding opposition across the two diagonal groups. All PPO, control, and
+  ROCm guardrail settings remain identical to the first trot qualification.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.

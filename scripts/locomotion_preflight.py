@@ -34,6 +34,9 @@ def main() -> int:
     parser.add_argument("--gait-cycle-time", type=float)
     parser.add_argument("--trot-contact-scale", type=float, default=0.0)
     parser.add_argument("--trot-swing-height-cost-scale", type=float, default=0.0)
+    parser.add_argument("--trot-timing-scale", type=float, default=0.0)
+    parser.add_argument("--trot-timing-std", type=float, default=0.1)
+    parser.add_argument("--trot-timing-max-error", type=float, default=0.2)
     parser.add_argument(
         "--zero-actions",
         action="store_true",
@@ -58,15 +61,20 @@ def main() -> int:
         or (args.gait_cycle_time is not None and args.gait_cycle_time <= 0.0)
         or args.trot_contact_scale < 0.0
         or args.trot_swing_height_cost_scale < 0.0
+        or args.trot_timing_scale < 0.0
+        or args.trot_timing_std <= 0.0
+        or args.trot_timing_max_error <= 0.0
     ):
         parser.error(
             "--num-envs, --num-steps, --action-scale, --leg-kp, and "
             "--gait-cycle-time must be positive when provided; trot reward "
-            "scales must be non-negative"
+            "scales must be non-negative and trot timing shape parameters "
+            "must be positive"
         )
     if args.gait_cycle_time is None and (
         args.trot_contact_scale > 0.0
         or args.trot_swing_height_cost_scale > 0.0
+        or args.trot_timing_scale > 0.0
     ):
         parser.error("trot reward scales require --gait-cycle-time")
     if args.zero_actions and args.resample_actions:
@@ -78,6 +86,9 @@ def main() -> int:
         gait_cycle_time=args.gait_cycle_time,
         trot_contact_scale=args.trot_contact_scale,
         trot_swing_height_cost_scale=args.trot_swing_height_cost_scale,
+        trot_timing_scale=args.trot_timing_scale,
+        trot_timing_std=args.trot_timing_std,
+        trot_timing_max_error=args.trot_timing_max_error,
     )
     rollout_env = env
     if args.training_wrapper:

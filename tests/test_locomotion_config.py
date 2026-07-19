@@ -520,3 +520,50 @@ def test_trot_qualification_adds_only_phase_and_trot_rewards() -> None:
         trot_reward.pop(key)
     baseline_reward.pop("profile")
     assert trot_reward == baseline_reward
+
+
+def test_trot_timing_qualification_changes_only_contact_shaping() -> None:
+    phase = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_trot_qualification.yaml"
+        ).read_text()
+    )
+    timing = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_trot_timing_qualification.yaml"
+        ).read_text()
+    )
+
+    for section in (
+        "environment",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert timing[section] == phase[section]
+
+    assert timing["reward"]["trot_contact_scale"] == 0.0
+    assert timing["reward"]["trot_timing_scale"] == 1.0
+    assert timing["reward"]["trot_timing_std"] == 0.1
+    assert timing["reward"]["trot_timing_max_error"] == 0.2
+
+    phase_reward = dict(phase["reward"])
+    timing_reward = dict(timing["reward"])
+    for key in (
+        "profile",
+        "trot_contact_scale",
+    ):
+        phase_reward.pop(key)
+        timing_reward.pop(key)
+    for key in (
+        "trot_timing_scale",
+        "trot_timing_std",
+        "trot_timing_max_error",
+    ):
+        timing_reward.pop(key)
+    assert timing_reward == phase_reward

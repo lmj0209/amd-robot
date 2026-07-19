@@ -79,6 +79,9 @@ def _make_env(
         trot_swing_height_cost_scale=reward.get(
             "trot_swing_height_cost_scale", 0.0
         ),
+        trot_timing_scale=reward.get("trot_timing_scale", 0.0),
+        trot_timing_std=reward.get("trot_timing_std", 0.1),
+        trot_timing_max_error=reward.get("trot_timing_max_error", 0.2),
         termination_cost_scale=reward["termination_cost_scale"],
         illegal_contact_cost_scale=reward["illegal_contact_cost_scale"],
         workspace_limit=environment["workspace_limit"],
