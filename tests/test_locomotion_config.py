@@ -154,6 +154,50 @@ def test_push_position_x_1cm_qualification_halves_only_the_probe_range() -> None
     assert qualification_reward == probe_reward
 
 
+def test_push_position_x_align85_changes_only_the_measured_align_gate() -> None:
+    position = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_qualification.yaml"
+        ).read_text()
+    )
+    align85 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_qualification.yaml"
+        ).read_text()
+    )
+
+    assert align85["status"] == (
+        "push_stage2_position_x_1cm_align85_qualification"
+    )
+    assert position["push"]["align_distance_threshold"] == 0.08
+    assert align85["push"]["align_distance_threshold"] == 0.085
+    for section in (
+        "environment",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert align85[section] == position[section]
+
+    position_push = dict(position["push"])
+    align85_push = dict(align85["push"])
+    position_push.pop("align_distance_threshold")
+    align85_push.pop("align_distance_threshold")
+    assert align85_push == position_push
+
+    position_reward = dict(position["reward"])
+    align85_reward = dict(align85["reward"])
+    position_reward.pop("profile")
+    align85_reward.pop("profile")
+    assert align85_reward == position_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 
