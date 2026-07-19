@@ -197,6 +197,31 @@ def test_push_align_can_synchronize_crawl_phase_before_contact():
     )
 
 
+def test_push_align_can_synchronize_to_a_nonzero_crawl_phase():
+    env = Go2Z1PushEnv(
+        approach_stop_distance=1.0,
+        align_gait_phase_sync=True,
+        align_gait_phase_fraction=0.85,
+    )
+    state = env.reset(jax.random.PRNGKey(0))
+    nxt = env.step(state, jnp.zeros(env.action_size))
+
+    expected = 2.0 * jnp.pi * (
+        0.85 + env.dt / env._gait_cycle_time
+    )
+    assert nxt.info["phase"] == int(TaskPhase.ALIGN)
+    assert jnp.isclose(nxt.info["gait_phase"], expected)
+
+
+def test_push_align_phase_fraction_rejects_invalid_values():
+    for fraction in (-0.01, 1.0):
+        with pytest.raises(
+            ValueError,
+            match=r"align gait phase fraction must be in \[0, 1\)",
+        ):
+            Go2Z1PushEnv(align_gait_phase_fraction=fraction)
+
+
 def test_push_task_reward_is_phase_gated_and_bounded():
     env = Go2Z1PushEnv()
     previous = env.reset(jax.random.PRNGKey(0))

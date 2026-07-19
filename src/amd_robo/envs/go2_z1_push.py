@@ -62,6 +62,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         push_command_x: float = DEFAULT_PUSH_COMMAND_X,
         push_command_ramp_duration: float = 0.0,
         align_gait_phase_sync: bool = False,
+        align_gait_phase_fraction: float = 0.0,
         goal_threshold: float = DEFAULT_GOAL_THRESHOLD,
         success_hold_steps: int = DEFAULT_SUCCESS_HOLD_STEPS,
         approach_progress_scale: float = 10.0,
@@ -87,6 +88,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("push command must be positive")
         if push_command_ramp_duration < 0.0:
             raise ValueError("push command ramp duration must be non-negative")
+        if not 0.0 <= align_gait_phase_fraction < 1.0:
+            raise ValueError("align gait phase fraction must be in [0, 1)")
         if goal_threshold <= 0.0:
             raise ValueError("goal threshold must be positive")
         if success_hold_steps <= 0:
@@ -129,6 +132,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         )
         self._push_command_ramp_duration = float(push_command_ramp_duration)
         self._align_gait_phase_sync = bool(align_gait_phase_sync)
+        self._align_gait_phase = float(2.0 * jnp.pi * align_gait_phase_fraction)
         self._goal_threshold = float(goal_threshold)
         self._success_hold_steps = int(success_hold_steps)
         self._object_speed_limit = float(object_speed_limit)
@@ -334,7 +338,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         if self._align_gait_phase_sync and "gait_phase" in state.info:
             staged_info["gait_phase"] = jnp.where(
                 phase == int(TaskPhase.ALIGN),
-                jnp.zeros_like(state.info["gait_phase"]),
+                jnp.full_like(state.info["gait_phase"], self._align_gait_phase),
                 state.info["gait_phase"],
             )
         staged = state.replace(info=staged_info)
