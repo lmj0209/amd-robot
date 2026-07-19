@@ -176,6 +176,27 @@ def test_push_command_ramp_uses_smoothstep_before_full_speed():
     assert jnp.allclose(command_at(200), env._push_command)
 
 
+def test_push_align_can_synchronize_crawl_phase_before_contact():
+    env = Go2Z1PushEnv(
+        approach_stop_distance=1.0,
+        align_gait_phase_sync=True,
+    )
+    state = env.reset(jax.random.PRNGKey(0))
+    state = state.replace(
+        info={
+            **state.info,
+            "gait_phase": jnp.asarray(1.75, dtype=jnp.float32),
+        }
+    )
+    nxt = env.step(state, jnp.zeros(env.action_size))
+
+    assert nxt.info["phase"] == int(TaskPhase.ALIGN)
+    assert jnp.isclose(
+        nxt.info["gait_phase"],
+        2.0 * jnp.pi * env.dt / env._gait_cycle_time,
+    )
+
+
 def test_push_task_reward_is_phase_gated_and_bounded():
     env = Go2Z1PushEnv()
     previous = env.reset(jax.random.PRNGKey(0))

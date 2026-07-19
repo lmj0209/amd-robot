@@ -61,6 +61,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         align_distance_threshold: float = DEFAULT_ALIGN_DISTANCE_THRESHOLD,
         push_command_x: float = DEFAULT_PUSH_COMMAND_X,
         push_command_ramp_duration: float = 0.0,
+        align_gait_phase_sync: bool = False,
         goal_threshold: float = DEFAULT_GOAL_THRESHOLD,
         success_hold_steps: int = DEFAULT_SUCCESS_HOLD_STEPS,
         approach_progress_scale: float = 10.0,
@@ -127,6 +128,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             dtype=jnp.float32,
         )
         self._push_command_ramp_duration = float(push_command_ramp_duration)
+        self._align_gait_phase_sync = bool(align_gait_phase_sync)
         self._goal_threshold = float(goal_threshold)
         self._success_hold_steps = int(success_hold_steps)
         self._object_speed_limit = float(object_speed_limit)
@@ -321,16 +323,21 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             state.info["success_count"] + 1,
             0,
         )
-        staged = state.replace(
-            info={
-                **state.info,
-                "phase": phase,
-                "command": command,
-                "align_steps": align_steps,
-                "push_steps": push_steps,
-                "success_count": success_count,
-            }
-        )
+        staged_info = {
+            **state.info,
+            "phase": phase,
+            "command": command,
+            "align_steps": align_steps,
+            "push_steps": push_steps,
+            "success_count": success_count,
+        }
+        if self._align_gait_phase_sync and "gait_phase" in state.info:
+            staged_info["gait_phase"] = jnp.where(
+                phase == int(TaskPhase.ALIGN),
+                jnp.zeros_like(state.info["gait_phase"]),
+                state.info["gait_phase"],
+            )
+        staged = state.replace(info=staged_info)
         stepped = self._with_task_state(super().step(staged, action))
         raw_task_rewards = self._task_reward_components(state, stepped)
         scaled_task_rewards = {
