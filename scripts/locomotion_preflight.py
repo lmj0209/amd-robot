@@ -151,27 +151,29 @@ def main() -> int:
             maxval=1.0,
         )
 
-    done_count = 0
-    illegal_contact_count = 0
-    nonfinite_state_count = 0
-    nonfinite_rewards = 0
-    nonfinite_observations = 0
+    done_count = jnp.zeros((), dtype=jnp.int32)
+    illegal_contact_count = jnp.zeros((), dtype=jnp.int32)
+    nonfinite_state_count = jnp.zeros((), dtype=jnp.int32)
+    nonfinite_rewards = jnp.zeros((), dtype=jnp.int32)
+    nonfinite_observations = jnp.zeros((), dtype=jnp.int32)
     action_key = jax.random.PRNGKey(args.action_seed)
-    max_abs_observation = float(jnp.max(jnp.abs(state.obs)))
-    min_reward = float("inf")
-    max_reward = float("-inf")
-    max_abs_actuator_force = 0.0
+    max_abs_observation = jnp.max(jnp.abs(state.obs))
+    min_reward = jnp.asarray(jnp.inf)
+    max_reward = jnp.asarray(-jnp.inf)
+    max_abs_actuator_force = jnp.zeros(())
     forward_velocity_total = jnp.zeros(())
     tilt_total = jnp.zeros(())
-    max_tilt_deg = 0.0
+    max_tilt_deg = jnp.zeros(())
     reward_metric_names = tuple(
         key for key in state.metrics if key.startswith("reward/")
     )
-    max_abs_reward_components = {key: 0.0 for key in reward_metric_names}
-    max_feet_air_time = 0.0
-    max_swing_peak = 0.0
+    max_abs_reward_components = {
+        key: jnp.zeros(()) for key in reward_metric_names
+    }
+    max_feet_air_time = jnp.zeros(())
+    max_swing_peak = jnp.zeros(())
     crawl_reference_error_total = jnp.zeros(())
-    max_crawl_reference_error = 0.0
+    max_crawl_reference_error = jnp.zeros(())
     has_crawl_reference_error = "crawl_reference_error_rms" in state.metrics
     previous_contact = None
     liftoff_count = jnp.zeros(4, dtype=jnp.int32)
@@ -193,56 +195,56 @@ def main() -> int:
                 maxval=1.0,
             )
         state = step_fn(state, actions)
-        done_count += int(jnp.sum(state.done).block_until_ready())
-        illegal_contact_count += int(
-            jnp.sum(state.metrics["illegal_contact"]).block_until_ready()
+        done_count += jnp.sum(state.done.astype(jnp.int32))
+        illegal_contact_count += jnp.sum(
+            state.metrics["illegal_contact"].astype(jnp.int32)
         )
-        nonfinite_state_count += int(
-            jnp.sum(state.metrics["nonfinite_state"]).block_until_ready()
+        nonfinite_state_count += jnp.sum(
+            state.metrics["nonfinite_state"].astype(jnp.int32)
         )
-        nonfinite_rewards += int(
-            jnp.sum(~jnp.isfinite(state.reward)).block_until_ready()
+        nonfinite_rewards += jnp.sum(
+            ~jnp.isfinite(state.reward), dtype=jnp.int32
         )
-        nonfinite_observations += int(
-            jnp.sum(~jnp.isfinite(state.obs)).block_until_ready()
+        nonfinite_observations += jnp.sum(
+            ~jnp.isfinite(state.obs), dtype=jnp.int32
         )
-        max_abs_observation = max(
+        max_abs_observation = jnp.maximum(
             max_abs_observation,
-            float(jnp.max(jnp.abs(state.obs)).block_until_ready()),
+            jnp.max(jnp.abs(state.obs)),
         )
-        min_reward = min(min_reward, float(jnp.min(state.reward).block_until_ready()))
-        max_reward = max(max_reward, float(jnp.max(state.reward).block_until_ready()))
-        max_abs_actuator_force = max(
+        min_reward = jnp.minimum(min_reward, jnp.min(state.reward))
+        max_reward = jnp.maximum(max_reward, jnp.max(state.reward))
+        max_abs_actuator_force = jnp.maximum(
             max_abs_actuator_force,
-            float(jnp.max(jnp.abs(state.data.actuator_force)).block_until_ready()),
+            jnp.max(jnp.abs(state.data.actuator_force)),
         )
         forward_velocity_total += jnp.mean(
             state.metrics["base_forward_velocity"]
         )
         tilt_total += jnp.mean(state.metrics["tilt_deg"])
-        max_tilt_deg = max(
+        max_tilt_deg = jnp.maximum(
             max_tilt_deg,
-            float(jnp.max(state.metrics["tilt_deg"]).block_until_ready()),
+            jnp.max(state.metrics["tilt_deg"]),
         )
         for key in reward_metric_names:
-            max_abs_reward_components[key] = max(
+            max_abs_reward_components[key] = jnp.maximum(
                 max_abs_reward_components[key],
-                float(jnp.max(jnp.abs(state.metrics[key])).block_until_ready()),
+                jnp.max(jnp.abs(state.metrics[key])),
             )
-        max_feet_air_time = max(
+        max_feet_air_time = jnp.maximum(
             max_feet_air_time,
-            float(jnp.max(state.info["feet_air_time"]).block_until_ready()),
+            jnp.max(state.info["feet_air_time"]),
         )
-        max_swing_peak = max(
+        max_swing_peak = jnp.maximum(
             max_swing_peak,
-            float(jnp.max(state.info["swing_peak"]).block_until_ready()),
+            jnp.max(state.info["swing_peak"]),
         )
         if has_crawl_reference_error:
             crawl_reference_error = state.metrics["crawl_reference_error_rms"]
             crawl_reference_error_total += jnp.mean(crawl_reference_error)
-            max_crawl_reference_error = max(
+            max_crawl_reference_error = jnp.maximum(
                 max_crawl_reference_error,
-                float(jnp.max(crawl_reference_error).block_until_ready()),
+                jnp.max(crawl_reference_error),
             )
         foot_contact = state.info["last_contact"]
         if previous_contact is not None:
@@ -279,7 +281,28 @@ def main() -> int:
             crawl_stance_three_total += jnp.sum(
                 swing_window & ((contact_count - active_contact) == 3)
             )
-    _block_tree(state)
+    _block_tree(
+        (
+            state,
+            done_count,
+            illegal_contact_count,
+            nonfinite_state_count,
+            nonfinite_rewards,
+            nonfinite_observations,
+            max_abs_observation,
+            min_reward,
+            max_reward,
+            max_abs_actuator_force,
+            forward_velocity_total,
+            tilt_total,
+            max_tilt_deg,
+            max_abs_reward_components,
+            max_feet_air_time,
+            max_swing_peak,
+            crawl_reference_error_total,
+            max_crawl_reference_error,
+        )
+    )
 
     crawl_swing_denominator = jnp.maximum(crawl_swing_sample_count, 1.0)
     report = {
@@ -298,18 +321,20 @@ def main() -> int:
         "crawl_min_air_time": args.crawl_min_air_time,
         "crawl_pose_reference": args.crawl_pose_reference,
         "command_x_override": args.command_x,
-        "done_count": done_count,
-        "illegal_contact_count": illegal_contact_count,
-        "nonfinite_state_count": nonfinite_state_count,
-        "nonfinite_rewards": nonfinite_rewards,
-        "nonfinite_observations": nonfinite_observations,
-        "max_abs_observation": max_abs_observation,
-        "min_reward": min_reward,
-        "max_reward": max_reward,
-        "max_abs_actuator_force": max_abs_actuator_force,
-        "max_abs_reward_components": max_abs_reward_components,
-        "max_feet_air_time": max_feet_air_time,
-        "max_swing_peak": max_swing_peak,
+        "done_count": int(done_count),
+        "illegal_contact_count": int(illegal_contact_count),
+        "nonfinite_state_count": int(nonfinite_state_count),
+        "nonfinite_rewards": int(nonfinite_rewards),
+        "nonfinite_observations": int(nonfinite_observations),
+        "max_abs_observation": float(max_abs_observation),
+        "min_reward": float(min_reward),
+        "max_reward": float(max_reward),
+        "max_abs_actuator_force": float(max_abs_actuator_force),
+        "max_abs_reward_components": {
+            key: float(value) for key, value in max_abs_reward_components.items()
+        },
+        "max_feet_air_time": float(max_feet_air_time),
+        "max_swing_peak": float(max_swing_peak),
         "liftoffs_per_env": [
             float(value) / args.num_envs for value in liftoff_count
         ],
@@ -346,7 +371,7 @@ def main() -> int:
             jnp.mean(state.data.qpos[:, 0] - initial_x)
         ),
         "trajectory_mean_tilt_deg": float(tilt_total / args.num_steps),
-        "max_tilt_deg": max_tilt_deg,
+        "max_tilt_deg": float(max_tilt_deg),
         "mean_tracking_error": float(jnp.mean(state.metrics["tracking_linear_error"])),
         "zero_actions": args.zero_actions,
         "resample_actions": args.resample_actions,
@@ -356,14 +381,16 @@ def main() -> int:
         report["mean_crawl_reference_error_rms"] = float(
             crawl_reference_error_total / args.num_steps
         )
-        report["max_crawl_reference_error_rms"] = max_crawl_reference_error
+        report["max_crawl_reference_error_rms"] = float(
+            max_crawl_reference_error
+        )
     print(f"LOCOMOTION_PREFLIGHT {json.dumps(report, sort_keys=True)}", flush=True)
     return int(
         report["observation_size"] != env.observation_size
         or report["action_size"] != 19
         or report["physics_substeps"] > 5
-        or nonfinite_rewards > 0
-        or nonfinite_observations > 0
+        or report["nonfinite_rewards"] > 0
+        or report["nonfinite_observations"] > 0
     )
 
 
