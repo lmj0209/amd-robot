@@ -439,3 +439,40 @@ def test_low_lr_qualification_changes_only_learning_rate() -> None:
             fixed_values.pop(key)
             low_lr_values.pop(key)
         assert low_lr_values == fixed_values
+
+
+def test_low_lr_extension_changes_only_additional_budget() -> None:
+    qualification = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_low_lr_qualification.yaml"
+        ).read_text()
+    )
+    extension = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_low_lr_extension.yaml"
+        ).read_text()
+    )
+
+    assert extension["ppo"]["num_timesteps"] == 4718592
+    for section in (
+        "environment",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert extension[section] == qualification[section]
+
+    for section, changed_keys in (
+        ("reward", {"profile"}),
+        ("ppo", {"num_timesteps"}),
+    ):
+        qualification_values = dict(qualification[section])
+        extension_values = dict(extension[section])
+        for key in changed_keys:
+            qualification_values.pop(key)
+            extension_values.pop(key)
+        assert extension_values == qualification_values

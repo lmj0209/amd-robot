@@ -55,6 +55,11 @@ and RGC system fingerprint.
   learning rate from `3e-5` to `1e-5`. It tests whether controlled exploration
   can be retained after the fixed-rate extension collapsed and the adaptive
   qualification produced unsafe, uncoordinated foot motion.
+- `locomotion_stage1_low_lr_extension.yaml`: a same-objective continuation
+  from the complete low-rate qualification to 5,242,880 total steps. It
+  changes only the additional training budget and retains the full-session
+  checkpoints plus KL, policy-standard-deviation, finite-state, and per-foot
+  gait acceptance gates.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.
