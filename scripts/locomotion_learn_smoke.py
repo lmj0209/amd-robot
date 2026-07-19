@@ -235,6 +235,9 @@ def _sequential_eval(
             )
             push_last_goal_distance = state.metrics["object_to_goal_distance"]
             push_min_goal_distance = push_last_goal_distance
+            push_last_end_effector_distance = state.metrics[
+                "end_effector_to_push_distance"
+            ]
             push_distance_total = jnp.zeros(())
             push_active_steps = jnp.zeros(())
             push_max_object_speed = jnp.zeros(())
@@ -388,6 +391,11 @@ def _sequential_eval(
                     jnp.minimum(push_min_goal_distance, goal_distance),
                     push_min_goal_distance,
                 )
+                push_last_end_effector_distance = jnp.where(
+                    active,
+                    state.metrics["end_effector_to_push_distance"],
+                    push_last_end_effector_distance,
+                )
                 push_distance_total += jnp.sum(
                     jnp.where(active, goal_distance, 0.0)
                 )
@@ -520,6 +528,9 @@ def _sequential_eval(
                     ),
                     "push_final_goal_distance_by_env": tuple(
                         float(value) for value in push_last_goal_distance
+                    ),
+                    "push_final_end_effector_distance_by_env": tuple(
+                        float(value) for value in push_last_end_effector_distance
                     ),
                     **push_failure_counts,
                 }
