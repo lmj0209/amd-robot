@@ -292,3 +292,37 @@ def test_network_probe_changes_only_network_and_probe_budget() -> None:
         baseline_ppo.pop(key, None)
         probe_ppo.pop(key, None)
     assert probe_ppo == baseline_ppo
+
+
+def test_network_qualification_promotes_only_probe_run_budget() -> None:
+    probe = yaml.safe_load(
+        (
+            REPO_ROOT / "configs" / "locomotion_stage1_network_probe.yaml"
+        ).read_text()
+    )
+    qualification = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_network_qualification.yaml"
+        ).read_text()
+    )
+
+    assert qualification["ppo"]["num_timesteps"] == 524288
+    assert qualification["manual_evaluation"]["enabled"] is True
+    assert qualification["checkpoint"]["interval_steps"] == 262144
+    for section in ("environment", "rocm_guardrails"):
+        assert qualification[section] == probe[section]
+
+    for section, changed_keys in (
+        ("reward", {"profile"}),
+        ("ppo", {"num_timesteps"}),
+        ("manual_evaluation", {"enabled"}),
+        ("checkpoint", {"interval_steps"}),
+    ):
+        probe_values = dict(probe[section])
+        qualification_values = dict(qualification[section])
+        for key in changed_keys:
+            probe_values.pop(key)
+            qualification_values.pop(key)
+        assert qualification_values == probe_values

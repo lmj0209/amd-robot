@@ -37,6 +37,10 @@ and RGC system fingerprint.
   gate for the upstream Go1/ATEC-sized `[512, 256, 128]` policy and value
   networks. It retains the 256-environment, five-substep, host-scan-two ROCm
   contract and does not qualify a locomotion policy.
+- `locomotion_stage1_network_qualification.yaml`: the 524,288-step fresh-policy
+  qualification promoted after the large-network compile gate passed. It
+  changes only network capacity from the Kp40/scale0.30 v28 qualification and
+  retains full-session checkpoints and per-foot sequential evaluation.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.
