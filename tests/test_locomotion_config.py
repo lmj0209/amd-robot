@@ -224,3 +224,32 @@ def test_mid_pose_qualification_changes_only_the_multiplier() -> None:
         aggressive_reward.pop(key)
         mid_reward.pop(key)
     assert mid_reward == aggressive_reward
+
+
+def test_tracking_qualification_changes_only_linear_tracking_scale() -> None:
+    baseline = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_action_scale_qualification.yaml"
+        ).read_text()
+    )
+    tracking = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_tracking_qualification.yaml"
+        ).read_text()
+    )
+
+    assert baseline["reward"]["tracking_linear_velocity_scale"] == 2.0
+    assert tracking["reward"]["tracking_linear_velocity_scale"] == 3.0
+    for section in ("environment", "ppo", "manual_evaluation", "rocm_guardrails"):
+        assert tracking[section] == baseline[section]
+
+    baseline_reward = dict(baseline["reward"])
+    tracking_reward = dict(tracking["reward"])
+    for key in ("profile", "tracking_linear_velocity_scale"):
+        baseline_reward.pop(key)
+        tracking_reward.pop(key)
+    assert tracking_reward == baseline_reward

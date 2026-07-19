@@ -1,0 +1,72 @@
+schema_version: 1
+status: locomotion_stage1_tracking_qualification
+algorithm: brax_ppo
+seed: 0
+
+environment:
+  control_timestep: 0.01
+  action_scale: 0.3
+  leg_kp: 40.0
+  foot_condim: 6
+  bounded_observations: true
+  randomized_reset: true
+  command_x_range: [0.2, 0.6]
+  zero_command_probability: 0.2
+  workspace_limit: 5.0
+
+reward:
+  profile: forward_gait_tracking_qualification_v6
+  tracking_sigma: 0.25
+  tracking_linear_velocity_scale: 3.0
+  tracking_angular_velocity_scale: 0.5
+  pose_scale: 0.5
+  vertical_velocity_cost_scale: 0.5
+  angular_velocity_xy_cost_scale: 0.05
+  orientation_cost_scale: 2.0
+  stand_still_cost_scale: 0.5
+  torque_cost_scale: 0.0001
+  action_rate_cost_scale: 0.01
+  action_magnitude_cost_scale: 0.001
+  arm_action_magnitude_cost_scale: 0.0
+  feet_slip_cost_scale: 0.1
+  feet_clearance_cost_scale: 2.0
+  feet_height_cost_scale: 0.2
+  feet_air_time_scale: 0.1
+  max_foot_height: 0.1
+  termination_cost_scale: 2.0
+  illegal_contact_cost_scale: 2.0
+
+ppo:
+  num_timesteps: 524288
+  num_envs: 256
+  episode_length: 256
+  unroll_length: 4
+  batch_size: 64
+  num_minibatches: 4
+  num_updates_per_batch: 2
+  learning_rate: 0.00003
+  learning_rate_schedule: NONE
+  desired_kl: 0.01
+  max_grad_norm: 1.0
+  entropy_cost: 0.01
+  discounting: 0.97
+  normalize_observations: false
+
+rocm_guardrails:
+  max_physics_substeps_per_control: 5
+  max_training_steps_per_host_call: 2
+  brax_run_evals: false
+
+manual_evaluation:
+  enabled: true
+  seed: 777
+  num_envs: 64
+  num_steps: 200
+  repeat_count: 1
+  fixed_command: [0.4, 0.0, 0.0]
+  implementation: sequential_python_loop
+
+checkpoint:
+  scope: full_training_session
+  interval_steps: 262144
+  includes_rollout_state: true
