@@ -12,6 +12,8 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_XML = REPO_ROOT / "assets" / "menagerie" / "go2_z1" / "scene_push_mjx.xml"
+END_EFFECTOR_BODY_NAME = "link06"
+END_EFFECTOR_LOCAL_POS = np.asarray([0.186, 0.0, -0.009])
 
 
 def _required_id(model: mujoco.MjModel, object_type, name: str) -> int:
@@ -38,6 +40,9 @@ def main() -> int:
     key_id = _required_id(model, mujoco.mjtObj.mjOBJ_KEY, "push_home")
     box_body_id = _required_id(model, mujoco.mjtObj.mjOBJ_BODY, "push_box_body")
     box_joint_id = _required_id(model, mujoco.mjtObj.mjOBJ_JOINT, "push_box_joint")
+    end_effector_body_id = _required_id(
+        model, mujoco.mjtObj.mjOBJ_BODY, END_EFFECTOR_BODY_NAME
+    )
     box_qpos_adr = int(model.jnt_qposadr[box_joint_id])
     box_dof_adr = int(model.jnt_dofadr[box_joint_id])
 
@@ -46,6 +51,10 @@ def main() -> int:
     data.ctrl[:] = model.key_ctrl[key_id]
     mujoco.mj_forward(model, data)
     initial_box_position = data.xpos[box_body_id].copy()
+    initial_end_effector_position = (
+        data.xpos[end_effector_body_id]
+        + data.xmat[end_effector_body_id].reshape(3, 3) @ END_EFFECTOR_LOCAL_POS
+    )
     max_box_height = float(initial_box_position[2])
     max_box_speed = 0.0
     first_motion_step = None
@@ -70,6 +79,9 @@ def main() -> int:
         "finite_qvel": bool(np.isfinite(data.qvel).all()),
         "first_object_motion_step": first_motion_step,
         "final_object_position": [float(value) for value in box_position],
+        "initial_end_effector_position": [
+            float(value) for value in initial_end_effector_position
+        ],
         "object_displacement": float(
             np.linalg.norm(box_position[:2] - initial_box_position[:2])
         ),
