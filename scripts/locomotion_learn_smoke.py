@@ -90,6 +90,9 @@ def _make_env(
         crawl_shift=environment.get("crawl_shift", 0.06),
         crawl_lift=environment.get("crawl_lift", 0.45),
         crawl_min_air_time=environment.get("crawl_min_air_time", 0.07),
+        crawl_pose_reference_enabled=environment.get(
+            "crawl_pose_reference_enabled", False
+        ),
         termination_cost_scale=reward["termination_cost_scale"],
         illegal_contact_cost_scale=reward["illegal_contact_cost_scale"],
         workspace_limit=environment["workspace_limit"],

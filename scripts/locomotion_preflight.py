@@ -43,6 +43,7 @@ def main() -> int:
     parser.add_argument("--crawl-shift", type=float, default=0.06)
     parser.add_argument("--crawl-lift", type=float, default=0.45)
     parser.add_argument("--crawl-min-air-time", type=float, default=0.07)
+    parser.add_argument("--crawl-pose-reference", action="store_true")
     parser.add_argument("--command-x", type=float)
     parser.add_argument(
         "--zero-actions",
@@ -92,6 +93,8 @@ def main() -> int:
         parser.error("trot reward scales require --gait-cycle-time")
     if args.crawl_reference and args.gait_cycle_time is None:
         parser.error("--crawl-reference requires --gait-cycle-time")
+    if args.crawl_pose_reference and not args.crawl_reference:
+        parser.error("--crawl-pose-reference requires --crawl-reference")
     if args.crawl_reference and (
         args.trot_contact_scale > 0.0
         or args.trot_swing_height_cost_scale > 0.0
@@ -116,6 +119,7 @@ def main() -> int:
         crawl_shift=args.crawl_shift,
         crawl_lift=args.crawl_lift,
         crawl_min_air_time=args.crawl_min_air_time,
+        crawl_pose_reference_enabled=args.crawl_pose_reference,
         command_override=(
             None if args.command_x is None else (args.command_x, 0.0, 0.0)
         ),

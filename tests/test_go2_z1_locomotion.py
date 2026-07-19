@@ -110,6 +110,10 @@ def test_trot_phase_alternates_diagonal_contact_targets() -> None:
             "crawl reference requires gait_cycle_time",
         ),
         (
+            {"crawl_pose_reference_enabled": True},
+            "crawl pose reference requires crawl reference",
+        ),
+        (
             {"crawl_stride": -0.1},
             "crawl stride must be non-negative",
         ),
@@ -219,6 +223,38 @@ def test_crawl_reference_is_disabled_for_zero_command() -> None:
     assert jnp.allclose(state.info["crawl_reference"], 0.0)
     assert jnp.allclose(state.data.qpos, env._home_qpos)
     assert jnp.allclose(state.data.ctrl, env._home_ctrl)
+
+
+def test_crawl_pose_reference_is_opt_in_and_retargets_pose_reward() -> None:
+    common = {
+        "command_override": (0.04, 0.0, 0.0),
+        "randomize_reset": False,
+        "gait_cycle_time": 4.0,
+        "crawl_reference_enabled": True,
+        "crawl_stride": 0.08,
+        "crawl_shift": 0.06,
+        "crawl_lift": 0.45,
+        "leg_kp": 50.0,
+    }
+    legacy = Go2Z1LocomotionEnv(**common)
+    reference = Go2Z1LocomotionEnv(
+        **common,
+        crawl_pose_reference_enabled=True,
+    )
+    key = jax.random.PRNGKey(0)
+    legacy_state = jax.jit(legacy.reset)(key)
+    reference_state = jax.jit(reference.reset)(key)
+    action = jnp.zeros(reference.action_size)
+    legacy_next = jax.jit(legacy.step)(legacy_state, action)
+    reference_next = jax.jit(reference.step)(reference_state, action)
+    _block_tree((legacy_next, reference_next))
+
+    assert "crawl_reference_error_rms" not in legacy_next.metrics
+    assert jnp.isfinite(reference_next.metrics["crawl_reference_error_rms"])
+    assert (
+        reference_next.metrics["reward/pose"]
+        > legacy_next.metrics["reward/pose"]
+    )
 
 
 def test_crawl_schedule_uses_four_beat_sequence() -> None:

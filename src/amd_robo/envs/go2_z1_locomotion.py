@@ -86,6 +86,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         crawl_shift: float = 0.06,
         crawl_lift: float = 0.45,
         crawl_min_air_time: float = 0.07,
+        crawl_pose_reference_enabled: bool = False,
         termination_cost_scale: float = 2.0,
         illegal_contact_cost_scale: float = 2.0,
         workspace_limit: float = 5.0,
@@ -131,6 +132,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             raise ValueError("trot reward scales require gait_cycle_time")
         if gait_cycle_time is None and crawl_reference_enabled:
             raise ValueError("crawl reference requires gait_cycle_time")
+        if crawl_pose_reference_enabled and not crawl_reference_enabled:
+            raise ValueError("crawl pose reference requires crawl reference")
         if crawl_reference_enabled and (
             trot_contact_scale > 0.0
             or trot_swing_height_cost_scale > 0.0
@@ -162,6 +165,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         self._crawl_shift = float(crawl_shift)
         self._crawl_lift = float(crawl_lift)
         self._crawl_min_air_time = float(crawl_min_air_time)
+        self._crawl_pose_reference_enabled = bool(crawl_pose_reference_enabled)
         self._reward_names = self._BASE_REWARD_NAMES
         if self._gait_cycle_time is not None:
             self._reward_names += ("trot_contact", "trot_swing_height")
@@ -347,6 +351,15 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             metrics["crawl_reference_rms"] = jnp.sqrt(
                 jnp.mean(jnp.square(crawl_reference))
             )
+            if self._crawl_pose_reference_enabled:
+                reference_error = (
+                    data.qpos[7:19]
+                    - self._home_qpos[7:19]
+                    - crawl_reference
+                )
+                metrics["crawl_reference_error_rms"] = jnp.sqrt(
+                    jnp.mean(jnp.square(reference_error))
+                )
         return state.replace(
             data=data,
             obs=self._observation(
@@ -443,6 +456,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             state.info.get("gait_phase"),
             current_air_time,
             current_contact_time,
+            crawl_reference,
         )
         scaled_components = {
             name: jnp.nan_to_num(
@@ -514,6 +528,15 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             metrics["crawl_reference_rms"] = jnp.sqrt(
                 jnp.mean(jnp.square(crawl_reference))
             )
+            if self._crawl_pose_reference_enabled:
+                reference_error = (
+                    stepped.data.qpos[7:19]
+                    - self._home_qpos[7:19]
+                    - crawl_reference
+                )
+                metrics["crawl_reference_error_rms"] = jnp.sqrt(
+                    jnp.mean(jnp.square(reference_error))
+                )
         return stepped.replace(
             obs=self._observation(
                 stepped.data,
@@ -603,21 +626,30 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         gait_phase,
         current_air_time,
         current_contact_time,
+        crawl_reference,
     ) -> dict[str, jax.Array]:
         local_linvel = self._local_linear_velocity(data)
         local_angvel = self._local_angular_velocity(data)
         linear_error = jnp.sum(jnp.square(command[:2] - local_linvel[:2]))
         angular_error = jnp.square(command[2] - local_angvel[2])
         projected_gravity = _rotmat(data.qpos[3:7]).T @ jnp.asarray([0.0, 0.0, -1.0])
-        leg_position_error = data.qpos[7:19] - self._home_qpos[7:19]
         pose_weight = jnp.asarray([1.0, 1.0, 0.1] * 4)
         command_norm = jnp.linalg.norm(command)
+        moving = command_norm > 0.01
+        home_position_error = data.qpos[7:19] - self._home_qpos[7:19]
+        leg_position_error = home_position_error
+        if self._crawl_pose_reference_enabled:
+            reference_position_error = home_position_error - crawl_reference
+            leg_position_error = jnp.where(
+                moving,
+                reference_position_error,
+                home_position_error,
+            )
         leg_torque = data.actuator_force[:12]
         foot_linvel = data.sensordata[self._foot_linvel_sensor_indices]
         foot_vel_xy = foot_linvel[:, :2]
         foot_vel_xy_norm_sq = jnp.sum(jnp.square(foot_vel_xy), axis=-1)
         foot_height = data.site_xpos[self._foot_site_ids, -1]
-        moving = command_norm > 0.01
         swing_height_error = swing_peak / self._max_foot_height - 1.0
         pose = jnp.exp(-jnp.sum(jnp.square(leg_position_error) * pose_weight))
         pose_multiplier = jnp.where(

@@ -738,6 +738,43 @@ def test_crawl_tracking_qualification_changes_only_tracking_sigma() -> None:
     assert tracking_reward == low_speed_reward
 
 
+def test_crawl_pose_reference_adds_only_the_reference_target_switch() -> None:
+    tracking = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_tracking_qualification.yaml"
+        ).read_text()
+    )
+    reference = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_pose_reference_qualification.yaml"
+        ).read_text()
+    )
+
+    for section in (
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert reference[section] == tracking[section]
+
+    tracking_environment = dict(tracking["environment"])
+    reference_environment = dict(reference["environment"])
+    reference_environment.pop("crawl_pose_reference_enabled")
+    assert reference["environment"]["crawl_pose_reference_enabled"] is True
+    assert reference_environment == tracking_environment
+
+    tracking_reward = dict(tracking["reward"])
+    reference_reward = dict(reference["reward"])
+    tracking_reward.pop("profile")
+    reference_reward.pop("profile")
+    assert reference_reward == tracking_reward
+
+
 def test_trot_dwell_qualification_adds_only_minimum_air_time() -> None:
     timing = yaml.safe_load(
         (
