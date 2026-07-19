@@ -326,3 +326,40 @@ def test_network_qualification_promotes_only_probe_run_budget() -> None:
             probe_values.pop(key)
             qualification_values.pop(key)
         assert qualification_values == probe_values
+
+
+def test_network_extension_changes_only_additional_budget() -> None:
+    qualification = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_network_qualification.yaml"
+        ).read_text()
+    )
+    extension = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_network_extension.yaml"
+        ).read_text()
+    )
+
+    assert extension["ppo"]["num_timesteps"] == 4718592
+    for section in (
+        "environment",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert extension[section] == qualification[section]
+
+    for section, changed_keys in (
+        ("reward", {"profile"}),
+        ("ppo", {"num_timesteps"}),
+    ):
+        qualification_values = dict(qualification[section])
+        extension_values = dict(extension[section])
+        for key in changed_keys:
+            qualification_values.pop(key)
+            extension_values.pop(key)
+        assert extension_values == qualification_values

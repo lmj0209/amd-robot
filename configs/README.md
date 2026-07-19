@@ -41,6 +41,10 @@ and RGC system fingerprint.
   qualification promoted after the large-network compile gate passed. It
   changes only network capacity from the Kp40/scale0.30 v28 qualification and
   retains full-session checkpoints and per-foot sequential evaluation.
+- `locomotion_stage1_network_extension.yaml`: a same-objective continuation
+  from the complete large-network qualification session to 5,242,880 total
+  steps. It changes only the additional training budget and retains
+  per-update KL/standard-deviation stop gates.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.
