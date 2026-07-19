@@ -120,6 +120,17 @@ def _make_env(
     )
 
 
+def _support_contact_masks(foot_contact):
+    """Returns support-count masks for a batch of four-foot contacts."""
+    contact_count = jnp.sum(foot_contact, axis=-1, dtype=jnp.int32)
+    return (
+        contact_count,
+        contact_count >= 3,
+        contact_count == 4,
+        contact_count == 0,
+    )
+
+
 def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
     from mujoco_playground import wrapper
 
@@ -145,6 +156,7 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
         forward_velocity_total = jnp.zeros(())
         tracking_error_total = jnp.zeros(())
         tilt_total = jnp.zeros(())
+        max_tilt_deg = jnp.zeros(())
         crawl_reference_error_total = jnp.zeros(())
         has_crawl_reference_error = (
             "crawl_reference_error_rms" in state.metrics
@@ -176,6 +188,7 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
         adjacent_two_contact_total = jnp.zeros(())
         lateral_two_contact_total = jnp.zeros(())
         front_hind_two_contact_total = jnp.zeros(())
+        three_or_more_contact_total = jnp.zeros(())
         all_four_contact_total = jnp.zeros(())
         zero_contact_total = jnp.zeros(())
         previous_contact = None
@@ -190,6 +203,9 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             forward_velocity_total += jnp.mean(state.metrics["base_forward_velocity"])
             tracking_error_total += jnp.mean(state.metrics["tracking_linear_error"])
             tilt_total += jnp.mean(state.metrics["tilt_deg"])
+            max_tilt_deg = jnp.maximum(
+                max_tilt_deg, jnp.max(state.metrics["tilt_deg"])
+            )
             if has_crawl_reference_error:
                 crawl_reference_error_total += jnp.mean(
                     state.metrics["crawl_reference_error_rms"]
@@ -249,7 +265,12 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
                 )
 
             fl, fr, rl, rr = (foot_contact[:, index] for index in range(4))
-            contact_count = jnp.sum(foot_contact, axis=-1)
+            (
+                contact_count,
+                three_or_more_contact,
+                all_four_contact,
+                zero_contact,
+            ) = _support_contact_masks(foot_contact)
             diagonal_two = (contact_count == 2) & ((fl & rr) | (fr & rl))
             adjacent_two = (contact_count == 2) & ~diagonal_two
             lateral_two = (contact_count == 2) & ((fl & rl) | (fr & rr))
@@ -272,14 +293,16 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             adjacent_two_contact_total += jnp.mean(adjacent_two)
             lateral_two_contact_total += jnp.mean(lateral_two)
             front_hind_two_contact_total += jnp.mean(front_hind_two)
-            all_four_contact_total += jnp.mean(contact_count == 4)
-            zero_contact_total += jnp.mean(contact_count == 0)
+            three_or_more_contact_total += jnp.mean(three_or_more_contact)
+            all_four_contact_total += jnp.mean(all_four_contact)
+            zero_contact_total += jnp.mean(zero_contact)
             previous_contact = foot_contact
         results[name] = {
             "mean_reward": float(reward_total / n_steps),
             "mean_forward_velocity": float(forward_velocity_total / n_steps),
             "mean_tracking_error": float(tracking_error_total / n_steps),
             "mean_tilt_deg": float(tilt_total / n_steps),
+            "max_tilt_deg": float(max_tilt_deg),
             "mean_forward_displacement": float(
                 jnp.mean(state.data.qpos[:, 0] - initial_x)
             ),
@@ -313,6 +336,9 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             ),
             "front_hind_two_contact_fraction": float(
                 front_hind_two_contact_total / n_steps
+            ),
+            "three_or_more_contact_fraction": float(
+                three_or_more_contact_total / n_steps
             ),
             "all_four_contact_fraction": float(
                 all_four_contact_total / n_steps
