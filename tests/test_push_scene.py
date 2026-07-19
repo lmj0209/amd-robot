@@ -20,6 +20,7 @@ def test_push_scene_has_physical_box_and_noncontact_task_markers():
     box_body_id = _id(model, mujoco.mjtObj.mjOBJ_BODY, "push_box_body")
     box_joint_id = _id(model, mujoco.mjtObj.mjOBJ_JOINT, "push_box_joint")
     box_geom_id = _id(model, mujoco.mjtObj.mjOBJ_GEOM, "push_box")
+    push_key_id = _id(model, mujoco.mjtObj.mjOBJ_KEY, "push_home")
     prepush_site_id = _id(model, mujoco.mjtObj.mjOBJ_SITE, "prepush_site")
     goal_site_id = _id(model, mujoco.mjtObj.mjOBJ_SITE, "goal_site")
     floor_id = _id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
@@ -33,15 +34,15 @@ def test_push_scene_has_physical_box_and_noncontact_task_markers():
 
     box_qpos_adr = model.jnt_qposadr[box_joint_id]
     np.testing.assert_allclose(
-        model.key_qpos[0, box_qpos_adr : box_qpos_adr + 7],
+        model.key_qpos[push_key_id, box_qpos_adr : box_qpos_adr + 7],
         [0.8, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0],
     )
     np.testing.assert_allclose(model.site_pos[prepush_site_id], [0.5, 0.0, 0.015])
     np.testing.assert_allclose(model.site_pos[goal_site_id], [1.2, 0.0, 0.005])
 
     data = mujoco.MjData(model)
-    data.qpos[:] = model.key_qpos[0]
-    data.ctrl[:] = model.key_ctrl[0]
+    data.qpos[:] = model.key_qpos[push_key_id]
+    data.ctrl[:] = model.key_ctrl[push_key_id]
     mujoco.mj_forward(model, data)
     assert all(
         floor_id in (contact.geom1, contact.geom2)

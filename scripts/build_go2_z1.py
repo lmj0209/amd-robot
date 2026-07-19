@@ -78,6 +78,7 @@ PUSH_BOX_JOINT_NAME = "push_box_joint"
 PUSH_BOX_GEOM_NAME = "push_box"
 PREPUSH_SITE_NAME = "prepush_site"
 GOAL_SITE_NAME = "goal_site"
+PUSH_KEYFRAME_NAME = "push_home"
 PUSH_BOX_INITIAL_POS = (0.8, 0.0, 0.1)
 PREPUSH_POS = (0.5, 0.0, 0.015)
 GOAL_POS = (1.2, 0.0, 0.005)
@@ -345,6 +346,24 @@ def build_push_scene() -> ET.Element:
             "rgba": "0.15 0.85 0.25 0.35",
         },
     )
+
+    robot = _parse(OUT_XML)
+    robot_home = robot.find("keyframe/key[@name='home']")
+    if robot_home is None:
+        raise SystemExit(f"home keyframe missing in {OUT_XML}")
+    keyframe = ET.SubElement(scene, "keyframe")
+    ET.SubElement(
+        keyframe,
+        "key",
+        {
+            "name": PUSH_KEYFRAME_NAME,
+            "qpos": (
+                f"{robot_home.get('qpos')} "
+                f"{' '.join(map(str, PUSH_BOX_INITIAL_POS))} 1 0 0 0"
+            ),
+            "ctrl": robot_home.get("ctrl"),
+        },
+    )
     return scene
 
 
@@ -404,8 +423,16 @@ def audit(
             "floor geom is not a plane"
         )
         data = mujoco.MjData(model)
-        data.qpos[:] = model.key_qpos[0]
-        data.ctrl[:] = model.key_ctrl[0]
+        home_key_id = (
+            mujoco.mj_name2id(
+                model, mujoco.mjtObj.mjOBJ_KEY, PUSH_KEYFRAME_NAME
+            )
+            if expect_push_task
+            else 0
+        )
+        assert home_key_id >= 0, f"{PUSH_KEYFRAME_NAME} keyframe is missing"
+        data.qpos[:] = model.key_qpos[home_key_id]
+        data.ctrl[:] = model.key_ctrl[home_key_id]
         mujoco.mj_forward(model, data)
         non_floor_contacts = [
             (contact.geom1, contact.geom2)
@@ -427,6 +454,9 @@ def audit(
         box_geom_id = mujoco.mj_name2id(
             model, mujoco.mjtObj.mjOBJ_GEOM, PUSH_BOX_GEOM_NAME
         )
+        push_key_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_KEY, PUSH_KEYFRAME_NAME
+        )
         prepush_site_id = mujoco.mj_name2id(
             model, mujoco.mjtObj.mjOBJ_SITE, PREPUSH_SITE_NAME
         )
@@ -437,6 +467,7 @@ def audit(
             box_body_id,
             box_joint_id,
             box_geom_id,
+            push_key_id,
             prepush_site_id,
             goal_site_id,
         ) >= 0, "push task object or marker is missing"
@@ -444,7 +475,7 @@ def audit(
         assert joint_names[-1] == PUSH_BOX_JOINT_NAME
         box_qpos_adr = model.jnt_qposadr[box_joint_id]
         assert np.allclose(
-            model.key_qpos[0, box_qpos_adr : box_qpos_adr + 7],
+            model.key_qpos[push_key_id, box_qpos_adr : box_qpos_adr + 7],
             (*PUSH_BOX_INITIAL_POS, 1.0, 0.0, 0.0, 0.0),
         )
         assert np.allclose(model.site_pos[prepush_site_id], PREPUSH_POS)
