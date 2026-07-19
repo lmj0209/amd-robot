@@ -40,7 +40,8 @@ push:
   hold_scale: 1.0
   success_bonus_scale: 10.0
   object_speed_limit: 0.5
-  object_speed_cost_scale: 0.2
+  object_speed_cost_scale: 20.0
+  object_height_tolerance: 0.02
   object_height_cost_scale: 5.0
 
 curriculum:
@@ -48,7 +49,7 @@ curriculum:
   learned_residual_phases: [PUSH]
 
 reward:
-  profile: push_stage2_near_field_push_only_v2
+  profile: push_stage2_near_field_push_only_v3
   tracking_sigma: 0.025
   tracking_linear_velocity_scale: 2.0
   tracking_angular_velocity_scale: 0.5
@@ -96,7 +97,7 @@ manual_evaluation:
   enabled: true
   seed: 777
   num_envs: 4
-  num_steps: 4200
+  num_steps: 4608
   repeat_count: 1
   fixed_command: [0.025, 0.0, 0.0]
   implementation: sequential_python_loop

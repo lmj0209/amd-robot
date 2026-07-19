@@ -66,7 +66,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         hold_scale: float = 1.0,
         success_bonus_scale: float = 10.0,
         object_speed_limit: float = 0.5,
-        object_speed_cost_scale: float = 0.2,
+        object_speed_cost_scale: float = 20.0,
+        object_height_tolerance: float = 0.02,
         object_height_cost_scale: float = 5.0,
         **kwargs,
     ) -> None:
@@ -95,6 +96,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("task reward scales must be non-negative")
         if object_speed_limit <= 0.0:
             raise ValueError("object speed limit must be positive")
+        if object_height_tolerance <= 0.0:
+            raise ValueError("object height tolerance must be positive")
         if object_speed_cost_scale < 0.0 or object_height_cost_scale < 0.0:
             raise ValueError("task cost scales must be non-negative")
         self._approach_stop_distance = float(approach_stop_distance)
@@ -107,6 +110,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         self._goal_threshold = float(goal_threshold)
         self._success_hold_steps = int(success_hold_steps)
         self._object_speed_limit = float(object_speed_limit)
+        self._object_height_tolerance = float(object_height_tolerance)
         self._task_reward_scales = {
             "approach_progress": float(approach_progress_scale),
             "align_progress": float(align_progress_scale),
@@ -350,13 +354,17 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             0.5,
         )
         object_speed = jnp.linalg.norm(current.info["object_qvel"][:2])
-        speed_excess = jnp.maximum(
-            object_speed - self._object_speed_limit,
-            0.0,
+        speed_excess = (
+            jnp.maximum(object_speed - self._object_speed_limit, 0.0)
+            / self._object_speed_limit
         )
-        object_height_error = jnp.maximum(
-            jnp.abs(current.metrics["object_height"] - 0.1) - 0.02,
-            0.0,
+        object_height_error = (
+            jnp.maximum(
+                jnp.abs(current.metrics["object_height"] - 0.1)
+                - self._object_height_tolerance,
+                0.0,
+            )
+            / self._object_height_tolerance
         )
         first_success = (current.metrics["success"] > 0.0) & (
             previous.metrics["success"] <= 0.0

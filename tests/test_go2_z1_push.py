@@ -156,6 +156,27 @@ def test_push_task_reward_is_phase_gated_and_bounded():
     assert components["success_bonus"] == 0.0
 
 
+def test_push_object_costs_are_normalized_to_their_limits():
+    env = Go2Z1PushEnv()
+    previous = env.reset(jax.random.PRNGKey(0))
+    current = previous.replace(
+        info={
+            **previous.info,
+            "phase": jnp.asarray(int(TaskPhase.PUSH)),
+            "object_qvel": previous.info["object_qvel"].at[0].set(1.0),
+        },
+        metrics={
+            **previous.metrics,
+            "object_height": jnp.asarray(0.15),
+        },
+    )
+
+    components = env._task_reward_components(previous, current)
+
+    assert jnp.isclose(components["object_speed"], 1.0)
+    assert jnp.isclose(components["object_height"], 2.25)
+
+
 def test_push_enters_push_after_completed_alignment():
     env = Go2Z1PushEnv(align_distance_threshold=2.0)
     state = jax.jit(env.reset)(jax.random.PRNGKey(0))

@@ -55,17 +55,19 @@ def test_push_near_field_qualification_spans_the_physical_oracle() -> None:
     assert config["environment"]["action_scale"] == 0.1
     assert config["push"]["goal_threshold"] == 0.08
     assert config["push"]["success_hold_steps"] == 100
+    assert config["push"]["object_speed_cost_scale"] == 20.0
+    assert config["push"]["object_height_tolerance"] == 0.02
     assert config["curriculum"] == {
         "deterministic_phases": ["APPROACH", "ALIGN", "HOLD"],
         "learned_residual_phases": ["PUSH"],
     }
-    assert config["reward"]["profile"] == "push_stage2_near_field_push_only_v2"
+    assert config["reward"]["profile"] == "push_stage2_near_field_push_only_v3"
     assert config["ppo"]["episode_length"] == 4608
     assert config["ppo"]["num_timesteps"] == (
         config["ppo"]["num_envs"] * config["ppo"]["episode_length"]
     )
     assert config["rocm_guardrails"]["max_training_steps_per_host_call"] == 1
-    assert config["manual_evaluation"]["num_steps"] >= 4200
+    assert config["manual_evaluation"]["num_steps"] == 4608
     assert config["checkpoint"]["scope"] == "full_training_session"
 
 
