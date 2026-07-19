@@ -243,6 +243,9 @@ def _sequential_eval(
             push_max_object_speed = jnp.zeros(())
             push_min_object_height = jnp.full((), jnp.inf)
             push_max_object_height = jnp.full((), -jnp.inf)
+            push_max_object_speed_by_env = jnp.zeros((n_envs,))
+            push_min_object_height_by_env = jnp.full((n_envs,), jnp.inf)
+            push_max_object_height_by_env = jnp.full((n_envs,), -jnp.inf)
             push_initial_object_x = state.info["object_pos"][:, 0]
             push_initial_object_y = state.info["object_pos"][:, 1]
             push_initial_object_x_min = jnp.min(push_initial_object_x)
@@ -412,6 +415,21 @@ def _sequential_eval(
                     push_max_object_height,
                     jnp.max(jnp.where(active, object_height, -jnp.inf)),
                 )
+                push_max_object_speed_by_env = jnp.where(
+                    active,
+                    jnp.maximum(push_max_object_speed_by_env, object_speed),
+                    push_max_object_speed_by_env,
+                )
+                push_min_object_height_by_env = jnp.where(
+                    active,
+                    jnp.minimum(push_min_object_height_by_env, object_height),
+                    push_min_object_height_by_env,
+                )
+                push_max_object_height_by_env = jnp.where(
+                    active,
+                    jnp.maximum(push_max_object_height_by_env, object_height),
+                    push_max_object_height_by_env,
+                )
                 terminal_now = active & state.done.astype(bool)
                 push_success = push_success | (
                     terminal_now & (state.metrics["success"] > 0.0)
@@ -531,6 +549,15 @@ def _sequential_eval(
                     ),
                     "push_final_end_effector_distance_by_env": tuple(
                         float(value) for value in push_last_end_effector_distance
+                    ),
+                    "push_max_object_speed_by_env": tuple(
+                        float(value) for value in push_max_object_speed_by_env
+                    ),
+                    "push_min_object_height_by_env": tuple(
+                        float(value) for value in push_min_object_height_by_env
+                    ),
+                    "push_max_object_height_by_env": tuple(
+                        float(value) for value in push_max_object_height_by_env
                     ),
                     **push_failure_counts,
                 }

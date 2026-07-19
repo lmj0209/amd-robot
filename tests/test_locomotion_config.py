@@ -198,6 +198,48 @@ def test_push_position_x_align85_changes_only_the_measured_align_gate() -> None:
     assert align85_reward == position_reward
 
 
+def test_push_position_x_ramp_changes_only_push_command_startup() -> None:
+    align85 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_qualification.yaml"
+        ).read_text()
+    )
+    ramp = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_ramp_qualification.yaml"
+        ).read_text()
+    )
+
+    assert ramp["status"] == (
+        "push_stage2_position_x_1cm_align85_ramp_qualification"
+    )
+    assert ramp["push"]["push_command_ramp_duration"] == 1.0
+    for section in (
+        "environment",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert ramp[section] == align85[section]
+
+    align85_push = dict(align85["push"])
+    ramp_push = dict(ramp["push"])
+    ramp_push.pop("push_command_ramp_duration")
+    assert ramp_push == align85_push
+
+    align85_reward = dict(align85["reward"])
+    ramp_reward = dict(ramp["reward"])
+    align85_reward.pop("profile")
+    ramp_reward.pop("profile")
+    assert ramp_reward == align85_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 

@@ -60,6 +60,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         align_duration: float = DEFAULT_ALIGN_DURATION,
         align_distance_threshold: float = DEFAULT_ALIGN_DISTANCE_THRESHOLD,
         push_command_x: float = DEFAULT_PUSH_COMMAND_X,
+        push_command_ramp_duration: float = 0.0,
         goal_threshold: float = DEFAULT_GOAL_THRESHOLD,
         success_hold_steps: int = DEFAULT_SUCCESS_HOLD_STEPS,
         approach_progress_scale: float = 10.0,
@@ -83,6 +84,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("align distance threshold must be positive")
         if push_command_x <= 0.0:
             raise ValueError("push command must be positive")
+        if push_command_ramp_duration < 0.0:
+            raise ValueError("push command ramp duration must be non-negative")
         if goal_threshold <= 0.0:
             raise ValueError("goal threshold must be positive")
         if success_hold_steps <= 0:
@@ -123,6 +126,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             [push_command_x, 0.0, 0.0],
             dtype=jnp.float32,
         )
+        self._push_command_ramp_duration = float(push_command_ramp_duration)
         self._goal_threshold = float(goal_threshold)
         self._success_hold_steps = int(success_hold_steps)
         self._object_speed_limit = float(object_speed_limit)
@@ -297,7 +301,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             state.info["command"],
             jnp.where(
                 phase == int(TaskPhase.PUSH),
-                self._push_command,
+                self._push_command_for_state(state),
                 jnp.zeros_like(state.info["command"]),
             ),
         )
@@ -357,6 +361,17 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             done=jnp.maximum(stepped.done, stepped.metrics["success"]),
             metrics=metrics,
         )
+
+    def _push_command_for_state(self, state) -> jax.Array:
+        if self._push_command_ramp_duration == 0.0:
+            return self._push_command
+        progress = jnp.clip(
+            state.info["push_steps"] * self.dt / self._push_command_ramp_duration,
+            0.0,
+            1.0,
+        )
+        smooth_progress = progress * progress * (3.0 - 2.0 * progress)
+        return self._push_command * smooth_progress
 
     def _task_actuator_reference(self, state) -> jax.Array:
         progress = jnp.clip(

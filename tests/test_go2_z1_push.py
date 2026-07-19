@@ -156,6 +156,26 @@ def test_push_policy_residual_is_active_only_in_push_phase():
     assert jnp.all(env._task_policy_action_mask(pushing) == 1.0)
 
 
+def test_push_command_ramp_uses_smoothstep_before_full_speed():
+    env = Go2Z1PushEnv(push_command_ramp_duration=1.0)
+    state = env.reset(jax.random.PRNGKey(0))
+
+    def command_at(push_steps):
+        staged = state.replace(
+            info={
+                **state.info,
+                "phase": jnp.asarray(int(TaskPhase.PUSH)),
+                "push_steps": jnp.asarray(push_steps, dtype=jnp.int32),
+            }
+        )
+        return env._push_command_for_state(staged)
+
+    assert jnp.allclose(command_at(0), 0.0)
+    assert jnp.allclose(command_at(50), env._push_command * 0.5)
+    assert jnp.allclose(command_at(100), env._push_command)
+    assert jnp.allclose(command_at(200), env._push_command)
+
+
 def test_push_task_reward_is_phase_gated_and_bounded():
     env = Go2Z1PushEnv()
     previous = env.reset(jax.random.PRNGKey(0))
