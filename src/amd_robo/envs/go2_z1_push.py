@@ -23,6 +23,8 @@ PREPUSH_SITE_NAME = "prepush_site"
 GOAL_SITE_NAME = "goal_site"
 DEFAULT_APPROACH_STOP_DISTANCE = 0.2
 DEFAULT_ALIGN_DURATION = 6.0
+DEFAULT_ALIGN_DISTANCE_THRESHOLD = 0.08
+DEFAULT_PUSH_COMMAND_X = 0.025
 ALIGN_ARM_JOINT_TARGET = (
     2.4480703588935633,
     2.775837254707154,
@@ -43,14 +45,25 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         xml_path: str | Path = DEFAULT_PUSH_XML,
         approach_stop_distance: float = DEFAULT_APPROACH_STOP_DISTANCE,
         align_duration: float = DEFAULT_ALIGN_DURATION,
+        align_distance_threshold: float = DEFAULT_ALIGN_DISTANCE_THRESHOLD,
+        push_command_x: float = DEFAULT_PUSH_COMMAND_X,
         **kwargs,
     ) -> None:
         if approach_stop_distance <= 0.0:
             raise ValueError("approach stop distance must be positive")
         if align_duration <= 0.0:
             raise ValueError("align duration must be positive")
+        if align_distance_threshold <= 0.0:
+            raise ValueError("align distance threshold must be positive")
+        if push_command_x <= 0.0:
+            raise ValueError("push command must be positive")
         self._approach_stop_distance = float(approach_stop_distance)
         self._align_duration = float(align_duration)
+        self._align_distance_threshold = float(align_distance_threshold)
+        self._push_command = jnp.asarray(
+            [push_command_x, 0.0, 0.0],
+            dtype=jnp.float32,
+        )
         kwargs.setdefault("home_keyframe", PUSH_HOME_KEYFRAME)
         kwargs.setdefault("ctrl_dt", 0.01)
         kwargs.setdefault("action_scale", 0.1)
@@ -128,6 +141,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             info={
                 **state.info,
                 "align_steps": jnp.asarray(0, dtype=jnp.int32),
+                "push_steps": jnp.asarray(0, dtype=jnp.int32),
             }
         )
         return self._with_task_state(state)
@@ -143,14 +157,37 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             int(TaskPhase.ALIGN),
             state.info["phase"],
         )
+        align_complete = (
+            (phase == int(TaskPhase.ALIGN))
+            & (state.info["align_steps"] * self.dt >= self._align_duration)
+            & (
+                state.metrics["end_effector_to_push_distance"]
+                <= self._align_distance_threshold
+            )
+        )
+        phase = jnp.where(
+            align_complete,
+            int(TaskPhase.PUSH),
+            phase,
+        )
         command = jnp.where(
             phase == int(TaskPhase.APPROACH),
             state.info["command"],
-            jnp.zeros_like(state.info["command"]),
+            jnp.where(
+                phase == int(TaskPhase.PUSH),
+                self._push_command,
+                jnp.zeros_like(state.info["command"]),
+            ),
         )
+        align_step_limit = round(self._align_duration / self.dt)
         align_steps = jnp.where(
-            phase == int(TaskPhase.ALIGN),
-            state.info["align_steps"] + 1,
+            phase >= int(TaskPhase.ALIGN),
+            jnp.minimum(state.info["align_steps"] + 1, align_step_limit),
+            0,
+        )
+        push_steps = jnp.where(
+            phase == int(TaskPhase.PUSH),
+            state.info["push_steps"] + 1,
             0,
         )
         staged = state.replace(
@@ -159,6 +196,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
                 "phase": phase,
                 "command": command,
                 "align_steps": align_steps,
+                "push_steps": push_steps,
             }
         )
         return self._with_task_state(super().step(staged, action))
@@ -283,6 +321,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
                 0.0,
                 1.0,
             ),
+            "push_steps": info["push_steps"].astype(jnp.float32),
         }
         return state.replace(
             obs=self._observation(

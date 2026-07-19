@@ -60,6 +60,8 @@ def main() -> int:
     robot_box_contact_total = jnp.zeros(())
     first_align_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
     base_to_prepush_at_align = jnp.asarray(jnp.nan)
+    first_push_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
+    end_effector_to_target_at_push = jnp.asarray(jnp.nan)
     first_robot_box_contact_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
     base_to_prepush_at_first_contact = jnp.asarray(jnp.nan)
     first_object_motion_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
@@ -95,6 +97,18 @@ def main() -> int:
             first_align_now,
             jnp.mean(state.metrics["base_to_prepush_distance"]),
             base_to_prepush_at_align,
+        )
+        any_push = jnp.any(state.info["phase"] >= int(TaskPhase.PUSH))
+        first_push_now = any_push & (first_push_step > args.num_steps)
+        first_push_step = jnp.where(
+            first_push_now,
+            step_index + 1,
+            first_push_step,
+        )
+        end_effector_to_target_at_push = jnp.where(
+            first_push_now,
+            jnp.mean(state.metrics["end_effector_to_push_distance"]),
+            end_effector_to_target_at_push,
         )
         contact = state.data._impl.contact
         geom1, geom2 = contact.geom[:, :, 0], contact.geom[:, :, 1]
@@ -214,6 +228,14 @@ def main() -> int:
             None
             if int(first_align_step) > args.num_steps
             else float(base_to_prepush_at_align)
+        ),
+        "first_push_step": (
+            None if int(first_push_step) > args.num_steps else int(first_push_step)
+        ),
+        "end_effector_to_target_at_push": (
+            None
+            if int(first_push_step) > args.num_steps
+            else float(end_effector_to_target_at_push)
         ),
         "first_robot_box_contact_step": (
             None
