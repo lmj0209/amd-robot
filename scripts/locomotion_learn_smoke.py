@@ -17,7 +17,10 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 
-from amd_robo.envs.go2_z1_locomotion import Go2Z1LocomotionEnv  # noqa: E402
+from amd_robo.envs.go2_z1_locomotion import (  # noqa: E402
+    FOOT_SITE_NAMES,
+    Go2Z1LocomotionEnv,
+)
 from amd_robo.training.host_loop import plan_brax_host_loop  # noqa: E402
 from amd_robo.training.learner_checkpoint import (  # noqa: E402
     load_training_session_checkpoint,
@@ -109,6 +112,19 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
         arm_action_square_total = jnp.zeros(())
         saturated_action_total = jnp.zeros(())
         saturated_leg_action_total = jnp.zeros(())
+        contact_duty_total = jnp.zeros(len(FOOT_SITE_NAMES))
+        liftoff_count = jnp.zeros(len(FOOT_SITE_NAMES), dtype=jnp.int32)
+        touchdown_count = jnp.zeros(len(FOOT_SITE_NAMES), dtype=jnp.int32)
+        air_time_total = jnp.zeros(len(FOOT_SITE_NAMES))
+        foot_height_total = jnp.zeros(len(FOOT_SITE_NAMES))
+        foot_height_max = jnp.full((len(FOOT_SITE_NAMES),), -jnp.inf)
+        diagonal_pair_mismatch_total = jnp.zeros(())
+        diagonal_group_opposition_total = jnp.zeros(())
+        diagonal_two_contact_total = jnp.zeros(())
+        adjacent_two_contact_total = jnp.zeros(())
+        all_four_contact_total = jnp.zeros(())
+        zero_contact_total = jnp.zeros(())
+        previous_contact = state.info["last_contact"]
         for _ in range(n_steps):
             actions = action_fn(state.obs)
             state = step_fn(state, actions)
@@ -132,6 +148,44 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             saturated_leg_action_total += jnp.mean(
                 jnp.abs(actions[:, :12]) >= 0.95
             )
+            foot_contact = state.info["last_contact"]
+            contact_duty_total += jnp.mean(foot_contact, axis=0)
+            liftoff_count += jnp.sum(
+                previous_contact & ~foot_contact, axis=0, dtype=jnp.int32
+            )
+            touchdown_count += jnp.sum(
+                ~previous_contact & foot_contact, axis=0, dtype=jnp.int32
+            )
+            air_time_total += jnp.mean(state.info["feet_air_time"], axis=0)
+            foot_height = state.data.site_xpos[:, env._foot_site_ids, -1]
+            foot_height_total += jnp.mean(foot_height, axis=0)
+            foot_height_max = jnp.maximum(
+                foot_height_max, jnp.max(foot_height, axis=0)
+            )
+
+            fl, fr, rl, rr = (foot_contact[:, index] for index in range(4))
+            contact_count = jnp.sum(foot_contact, axis=-1)
+            diagonal_two = (contact_count == 2) & ((fl & rr) | (fr & rl))
+            adjacent_two = (contact_count == 2) & ~diagonal_two
+            diagonal_pair_mismatch_total += jnp.mean(
+                (
+                    jnp.logical_xor(fl, rr).astype(jnp.float32)
+                    + jnp.logical_xor(fr, rl).astype(jnp.float32)
+                )
+                / 2.0
+            )
+            diagonal_group_opposition_total += jnp.mean(
+                (
+                    jnp.logical_xor(fl, fr).astype(jnp.float32)
+                    + jnp.logical_xor(rl, rr).astype(jnp.float32)
+                )
+                / 2.0
+            )
+            diagonal_two_contact_total += jnp.mean(diagonal_two)
+            adjacent_two_contact_total += jnp.mean(adjacent_two)
+            all_four_contact_total += jnp.mean(contact_count == 4)
+            zero_contact_total += jnp.mean(contact_count == 0)
+            previous_contact = foot_contact
         results[name] = {
             "mean_reward": float(reward_total / n_steps),
             "mean_forward_velocity": float(forward_velocity_total / n_steps),
@@ -152,7 +206,44 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             "done_count": int(done_count),
             "illegal_contact_count": int(illegal_contact_count),
             "nonfinite_state_count": int(nonfinite_state_count),
+            "diagonal_pair_mismatch_fraction": float(
+                diagonal_pair_mismatch_total / n_steps
+            ),
+            "diagonal_group_opposition_fraction": float(
+                diagonal_group_opposition_total / n_steps
+            ),
+            "diagonal_two_contact_fraction": float(
+                diagonal_two_contact_total / n_steps
+            ),
+            "adjacent_two_contact_fraction": float(
+                adjacent_two_contact_total / n_steps
+            ),
+            "all_four_contact_fraction": float(
+                all_four_contact_total / n_steps
+            ),
+            "zero_contact_fraction": float(zero_contact_total / n_steps),
         }
+        for index, foot_name in enumerate(FOOT_SITE_NAMES):
+            results[name].update(
+                {
+                    f"{foot_name}_contact_duty": float(
+                        contact_duty_total[index] / n_steps
+                    ),
+                    f"{foot_name}_liftoffs_per_env": float(
+                        liftoff_count[index] / n_envs
+                    ),
+                    f"{foot_name}_touchdowns_per_env": float(
+                        touchdown_count[index] / n_envs
+                    ),
+                    f"{foot_name}_mean_air_time": float(
+                        air_time_total[index] / n_steps
+                    ),
+                    f"{foot_name}_mean_height": float(
+                        foot_height_total[index] / n_steps
+                    ),
+                    f"{foot_name}_max_height": float(foot_height_max[index]),
+                }
+            )
         results[name].update(
             {
                 f"mean_{key.replace('/', '_')}": float(total / n_steps)
