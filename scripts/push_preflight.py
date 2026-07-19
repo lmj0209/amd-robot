@@ -49,6 +49,8 @@ def main() -> int:
     first_robot_box_contact_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
     base_to_prepush_at_first_contact = jnp.asarray(jnp.nan)
     first_object_motion_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
+    base_to_prepush_at_first_motion = jnp.asarray(jnp.nan)
+    minimum_robot_box_signed_margin = jnp.asarray(jnp.inf)
     max_tilt_deg = jnp.zeros(())
     max_object_height = jnp.max(state.info["object_pos"][:, 2])
     max_object_speed = jnp.zeros(())
@@ -81,12 +83,20 @@ def main() -> int:
         )
         contact = state.data._impl.contact
         geom1, geom2 = contact.geom[:, :, 0], contact.geom[:, :, 1]
-        active = contact.dist < 0.0
+        active = contact.dist < contact.includemargin
         box_contact = (geom1 == env._box_geom_id) | (geom2 == env._box_geom_id)
         other_geom = jnp.where(geom1 == env._box_geom_id, geom2, geom1)
-        robot_box_contact = jnp.any(
-            active & box_contact & (other_geom != env._floor_geom_id),
-            axis=-1,
+        robot_box_pair = box_contact & (other_geom != env._floor_geom_id)
+        robot_box_contact = jnp.any(active & robot_box_pair, axis=-1)
+        minimum_robot_box_signed_margin = jnp.minimum(
+            minimum_robot_box_signed_margin,
+            jnp.min(
+                jnp.where(
+                    robot_box_pair,
+                    contact.dist - contact.includemargin,
+                    jnp.inf,
+                )
+            ),
         )
         robot_box_contact_total += jnp.mean(robot_box_contact)
         any_robot_box_contact = jnp.any(robot_box_contact)
@@ -110,10 +120,16 @@ def main() -> int:
             )
             > 1.0e-3
         )
+        first_motion_now = object_motion & (first_object_motion_step > args.num_steps)
         first_object_motion_step = jnp.where(
-            object_motion & (first_object_motion_step > args.num_steps),
+            first_motion_now,
             step_index + 1,
             first_object_motion_step,
+        )
+        base_to_prepush_at_first_motion = jnp.where(
+            first_motion_now,
+            jnp.mean(state.metrics["base_to_prepush_distance"]),
+            base_to_prepush_at_first_motion,
         )
         max_tilt_deg = jnp.maximum(max_tilt_deg, jnp.max(state.metrics["tilt_deg"]))
         max_object_height = jnp.maximum(
@@ -183,10 +199,16 @@ def main() -> int:
             if int(first_robot_box_contact_step) > args.num_steps
             else float(base_to_prepush_at_first_contact)
         ),
+        "minimum_robot_box_signed_margin": float(minimum_robot_box_signed_margin),
         "first_object_motion_step": (
             None
             if int(first_object_motion_step) > args.num_steps
             else int(first_object_motion_step)
+        ),
+        "base_to_prepush_at_first_motion": (
+            None
+            if int(first_object_motion_step) > args.num_steps
+            else float(base_to_prepush_at_first_motion)
         ),
         "three_or_more_contact_fraction": float(
             three_or_more_contact_total / args.num_steps
