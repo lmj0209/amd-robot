@@ -22,6 +22,15 @@ PUSH_CONTACT_SITE_NAME = "push_contact_site"
 PREPUSH_SITE_NAME = "prepush_site"
 GOAL_SITE_NAME = "goal_site"
 DEFAULT_APPROACH_STOP_DISTANCE = 0.2
+DEFAULT_ALIGN_DURATION = 6.0
+ALIGN_ARM_JOINT_TARGET = (
+    2.4480703588935633,
+    2.775837254707154,
+    -0.5128763925136487,
+    -0.46937292541924974,
+    0.6170071964054299,
+    0.18534777065335487,
+)
 
 
 class Go2Z1PushEnv(Go2Z1LocomotionEnv):
@@ -33,11 +42,15 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         self,
         xml_path: str | Path = DEFAULT_PUSH_XML,
         approach_stop_distance: float = DEFAULT_APPROACH_STOP_DISTANCE,
+        align_duration: float = DEFAULT_ALIGN_DURATION,
         **kwargs,
     ) -> None:
         if approach_stop_distance <= 0.0:
             raise ValueError("approach stop distance must be positive")
+        if align_duration <= 0.0:
+            raise ValueError("align duration must be positive")
         self._approach_stop_distance = float(approach_stop_distance)
+        self._align_duration = float(align_duration)
         kwargs.setdefault("home_keyframe", PUSH_HOME_KEYFRAME)
         kwargs.setdefault("ctrl_dt", 0.01)
         kwargs.setdefault("action_scale", 0.1)
@@ -86,6 +99,12 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         self._box_qpos_slice = slice(self._box_qpos_adr, self._box_qpos_adr + 7)
         self._box_qvel_slice = slice(self._box_dof_adr, self._box_dof_adr + 6)
         self._initial_box_qpos = self._home_qpos[self._box_qpos_slice]
+        self._align_arm_joint_target = jnp.asarray(ALIGN_ARM_JOINT_TARGET)
+        if bool(
+            jnp.any(self._align_arm_joint_target < self._ctrl_min[12:18])
+            | jnp.any(self._align_arm_joint_target > self._ctrl_max[12:18])
+        ):
+            raise ValueError("align arm target exceeds actuator limits")
         self._allowed_floor_geom_ids = jnp.concatenate(
             [
                 self._allowed_floor_geom_ids,
@@ -104,7 +123,14 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         return super().observation_size + self._TASK_OBSERVATION_SIZE
 
     def reset(self, rng: jax.Array):
-        return self._with_task_state(super().reset(rng))
+        state = super().reset(rng)
+        state = state.replace(
+            info={
+                **state.info,
+                "align_steps": jnp.asarray(0, dtype=jnp.int32),
+            }
+        )
+        return self._with_task_state(state)
 
     def step(self, state, action: jax.Array):
         prepush_position = state.data.site_xpos[self._prepush_site_id]
@@ -122,14 +148,32 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             state.info["command"],
             jnp.zeros_like(state.info["command"]),
         )
+        align_steps = jnp.where(
+            phase == int(TaskPhase.ALIGN),
+            state.info["align_steps"] + 1,
+            0,
+        )
         staged = state.replace(
             info={
                 **state.info,
                 "phase": phase,
                 "command": command,
+                "align_steps": align_steps,
             }
         )
         return self._with_task_state(super().step(staged, action))
+
+    def _task_actuator_reference(self, state) -> jax.Array:
+        progress = jnp.clip(
+            state.info["align_steps"] * self.dt / self._align_duration,
+            0.0,
+            1.0,
+        )
+        smooth_progress = progress * progress * (3.0 - 2.0 * progress)
+        arm_offset = smooth_progress * (
+            self._align_arm_joint_target - self._home_ctrl[12:18]
+        )
+        return jnp.zeros_like(self._home_ctrl).at[12:18].set(arm_offset)
 
     def _task_vectors(self, data):
         world_to_base = _rotmat(data.qpos[3:7]).T
@@ -234,6 +278,11 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             ),
             "approach_stop_distance": jnp.asarray(self._approach_stop_distance),
             "task_phase": info["phase"].astype(jnp.float32),
+            "align_progress": jnp.clip(
+                info["align_steps"] * self.dt / self._align_duration,
+                0.0,
+                1.0,
+            ),
         }
         return state.replace(
             obs=self._observation(

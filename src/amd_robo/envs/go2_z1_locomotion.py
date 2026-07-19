@@ -466,7 +466,11 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                 _, crawl_foot_targets, crawl_ik_reachable = (
                     self._crawl_foot_space_solution(state.info["gait_phase"])
                 )
-            ctrl = self._home_ctrl + self._action_scale * applied_action
+            ctrl = (
+                self._home_ctrl
+                + self._action_scale * applied_action
+                + self._task_actuator_reference(state)
+            )
             ctrl = ctrl.at[:12].add(crawl_reference)
             ctrl = jnp.clip(ctrl, self._ctrl_min, self._ctrl_max)
             stepped = self._step_with_ctrl(
@@ -628,6 +632,11 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             metrics=metrics,
             info=info,
         )
+
+    def _task_actuator_reference(self, state) -> jax.Array:
+        """Return a task-specific actuator offset without changing action size."""
+        del state
+        return jnp.zeros_like(self._home_ctrl)
 
     def _observation(
         self,

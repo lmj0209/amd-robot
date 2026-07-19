@@ -21,6 +21,8 @@ def test_push_reset_uses_named_keyframe_and_exposes_task_state():
     assert env._joint_dof_indices.shape == (19,)
     assert not jnp.any(env._joint_qpos_indices == env._box_qpos_adr)
     assert state.info["phase"] == int(TaskPhase.APPROACH)
+    assert state.info["align_steps"] == 0
+    assert state.metrics["align_progress"] == 0.0
     assert jnp.allclose(
         state.info["object_qpos"],
         jnp.asarray([0.8, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0]),
@@ -65,10 +67,37 @@ def test_push_enters_align_and_stops_crawl_before_contact():
     _block_tree(nxt)
 
     assert nxt.info["phase"] == int(TaskPhase.ALIGN)
+    assert nxt.info["align_steps"] == 1
     assert jnp.allclose(nxt.info["command"], 0.0)
     assert nxt.metrics["task_phase"] == float(TaskPhase.ALIGN)
+    assert 0.0 < nxt.metrics["align_progress"] < 1.0
+    assert not jnp.allclose(nxt.data.ctrl[12:18], env._home_ctrl[12:18])
     assert nxt.metrics["object_displacement"] < 1.0e-3
     assert _tree_is_finite(nxt.data)
+
+
+def test_push_align_reference_reaches_the_audited_arm_target():
+    env = Go2Z1PushEnv()
+    state = env.reset(jax.random.PRNGKey(0))
+    state = state.replace(
+        info={
+            **state.info,
+            "phase": jnp.asarray(int(TaskPhase.ALIGN)),
+            "align_steps": jnp.asarray(
+                round(env._align_duration / env.dt),
+                dtype=jnp.int32,
+            ),
+        }
+    )
+
+    reference = env._task_actuator_reference(state)
+
+    assert jnp.allclose(reference[:12], 0.0)
+    assert jnp.allclose(reference[18], 0.0)
+    assert jnp.allclose(
+        env._home_ctrl[12:18] + reference[12:18],
+        env._align_arm_joint_target,
+    )
 
 
 def test_push_reset_and_step_are_finite_under_vmap():

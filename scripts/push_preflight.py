@@ -206,6 +206,7 @@ def main() -> int:
         "max_object_displacement": float(jnp.max(object_displacement)),
         "robot_box_contact_fraction": float(robot_box_contact_total / args.num_steps),
         "final_phase": int(jnp.max(state.info["phase"])),
+        "final_align_progress": float(jnp.mean(state.metrics["align_progress"])),
         "first_align_step": (
             None if int(first_align_step) > args.num_steps else int(first_align_step)
         ),
