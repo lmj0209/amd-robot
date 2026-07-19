@@ -581,6 +581,13 @@ def main() -> int:
     parser.add_argument("--params-out")
     parser.add_argument("--eval-only", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
+    parser.add_argument(
+        "--eval-policy",
+        choices=("both", "baseline", "trained"),
+        default="both",
+    )
+    parser.add_argument("--eval-num-envs", type=int)
+    parser.add_argument("--eval-num-steps", type=int)
     parser.add_argument("--training-state-dir")
     parser.add_argument("--resume-training-state")
     parser.add_argument("--checkpoint-interval-steps", type=int)
@@ -607,6 +614,16 @@ def main() -> int:
     guardrails = config["rocm_guardrails"]
     evaluation = config["manual_evaluation"]
     checkpoint = config["checkpoint"]
+    eval_num_envs = (
+        evaluation["num_envs"]
+        if args.eval_num_envs is None
+        else args.eval_num_envs
+    )
+    eval_num_steps = (
+        evaluation["num_steps"]
+        if args.eval_num_steps is None
+        else args.eval_num_steps
+    )
     checkpoint_interval_steps = (
         checkpoint["interval_steps"]
         if args.checkpoint_interval_steps is None
@@ -684,14 +701,17 @@ def main() -> int:
         or batch_size <= 0
         or num_minibatches <= 0
         or checkpoint_interval_steps <= 0
+        or eval_num_envs <= 0
+        or eval_num_steps <= 0
         or not policy_hidden_layer_sizes
         or not value_hidden_layer_sizes
         or any(size <= 0 for size in policy_hidden_layer_sizes)
         or any(size <= 0 for size in value_hidden_layer_sizes)
     ):
         parser.error(
-            "timesteps must be non-negative; episode length and learning rate "
-            "and PPO batch, network, and checkpoint dimensions must be positive"
+            "timesteps must be non-negative; episode length, evaluation size, "
+            "learning rate, PPO batch, network, and checkpoint dimensions must "
+            "be positive"
         )
     if batch_size * num_minibatches % num_envs:
         parser.error("batch_size * num_minibatches must be divisible by num_envs")
@@ -1009,18 +1029,31 @@ def main() -> int:
     def zero_action(obs):
         return jnp.zeros((obs.shape[0], env.action_size))
 
+    action_fns = {
+        "baseline": zero_action,
+        "trained": trained_action,
+    }
+    if args.eval_policy != "both":
+        action_fns = {
+            args.eval_policy: action_fns[args.eval_policy],
+        }
     eval_env = _make_env(
         config,
         command_override=evaluation["fixed_command"],
         randomize_reset=False,
         task=args.task,
     )
-    print("LOCOMOTION_EVAL_START implementation=sequential_python_loop", flush=True)
+    print(
+        "LOCOMOTION_EVAL_START implementation=sequential_python_loop "
+        f"policies={','.join(action_fns)} num_envs={eval_num_envs} "
+        f"num_steps={eval_num_steps}",
+        flush=True,
+    )
     results = _sequential_eval(
         eval_env,
-        {"baseline": zero_action, "trained": trained_action},
-        n_envs=evaluation["num_envs"],
-        n_steps=evaluation["num_steps"],
+        action_fns,
+        n_envs=eval_num_envs,
+        n_steps=eval_num_steps,
         seed=evaluation["seed"],
         full_reset=args.task == "push",
     )
