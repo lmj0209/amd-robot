@@ -160,6 +160,7 @@ def _run_candidate(
     *,
     num_cycles: int,
     control_timestep: float,
+    settle_time: float,
     leg_kp: float,
     leg_kd: float,
     minimum_air_time: float,
@@ -215,6 +216,13 @@ def _run_candidate(
     data.ctrl[:] = home_ctrl
     data.ctrl[:12] += references[0]
     mujoco.mj_forward(model, data)
+    settle_steps = round(settle_time / control_timestep)
+    if not np.isclose(settle_steps * control_timestep, settle_time):
+        raise ValueError("settle time must be divisible by control timestep")
+    for _ in range(settle_steps):
+        for _ in range(substeps):
+            mujoco.mj_step(model, data)
+
     initial_x = float(data.qpos[0])
     previous_contact, initial_illegal = _active_contacts(
         data,
@@ -325,6 +333,7 @@ def _run_candidate(
         "num_cycles": num_cycles,
         "num_steps": num_steps,
         "duration_s": duration_s,
+        "settle_time": settle_time,
         "physics_substeps": substeps,
         "leg_kp": leg_kp,
         "leg_kd": leg_kd,
@@ -358,6 +367,7 @@ def main() -> int:
     parser.add_argument("--candidate", action="append", type=_parse_candidate)
     parser.add_argument("--num-cycles", type=int, default=4)
     parser.add_argument("--control-timestep", type=float, default=0.01)
+    parser.add_argument("--settle-time", type=float, default=1.0)
     parser.add_argument("--leg-kp", type=float, default=50.0)
     parser.add_argument("--leg-kd", type=float, default=0.5)
     parser.add_argument("--minimum-air-time", type=float, default=0.07)
@@ -367,6 +377,7 @@ def main() -> int:
     if (
         args.num_cycles <= 0
         or args.control_timestep <= 0.0
+        or args.settle_time < 0.0
         or args.leg_kp <= 0.0
         or args.leg_kd < 0.0
         or args.minimum_air_time <= 0.0
@@ -382,6 +393,7 @@ def main() -> int:
             candidate,
             num_cycles=args.num_cycles,
             control_timestep=args.control_timestep,
+            settle_time=args.settle_time,
             leg_kp=args.leg_kp,
             leg_kd=args.leg_kd,
             minimum_air_time=args.minimum_air_time,
