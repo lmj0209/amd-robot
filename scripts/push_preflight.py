@@ -56,6 +56,10 @@ def main() -> int:
     done_count = jnp.zeros((), dtype=jnp.int32)
     illegal_contact_count = jnp.zeros((), dtype=jnp.int32)
     nonfinite_state_count = jnp.zeros((), dtype=jnp.int32)
+    nonfinite_reward_count = jnp.zeros((), dtype=jnp.int32)
+    reward_total = jnp.zeros(())
+    task_reward_total = jnp.zeros(())
+    task_component_totals = {name: jnp.zeros(()) for name in env._TASK_REWARD_NAMES}
     three_or_more_contact_total = jnp.zeros(())
     robot_box_contact_total = jnp.zeros(())
     first_align_step = jnp.asarray(args.num_steps + 1, dtype=jnp.int32)
@@ -85,6 +89,16 @@ def main() -> int:
         nonfinite_state_count += jnp.sum(
             state.metrics["nonfinite_state"].astype(jnp.int32)
         )
+        nonfinite_reward_count += jnp.sum(
+            (~jnp.isfinite(state.reward)).astype(jnp.int32)
+        )
+        reward_total += jnp.mean(state.reward)
+        task_reward_total += jnp.mean(state.metrics["task_reward"])
+        task_component_totals = {
+            name: task_component_totals[name]
+            + jnp.mean(state.metrics[f"reward/task_{name}"])
+            for name in env._TASK_REWARD_NAMES
+        }
         three_or_more_contact_total += jnp.mean(
             jnp.sum(state.info["last_contact"], axis=-1) >= 3
         )
@@ -289,7 +303,14 @@ def main() -> int:
         "done_count": int(done_count),
         "illegal_contact_count": int(illegal_contact_count),
         "nonfinite_state_count": int(nonfinite_state_count),
+        "nonfinite_reward_count": int(nonfinite_reward_count),
         "nonfinite_observations": int(jnp.sum(~jnp.isfinite(state.obs))),
+        "mean_reward": float(reward_total / args.num_steps),
+        "mean_task_reward": float(task_reward_total / args.num_steps),
+        "mean_task_reward_components": {
+            name: float(total / args.num_steps)
+            for name, total in task_component_totals.items()
+        },
         "minimum_crawl_ik_reachable_fraction": float(
             jnp.min(state.metrics["crawl_ik_reachable_fraction"])
         ),

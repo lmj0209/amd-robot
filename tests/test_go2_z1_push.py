@@ -25,6 +25,10 @@ def test_push_reset_uses_named_keyframe_and_exposes_task_state():
     assert state.info["push_steps"] == 0
     assert state.metrics["align_progress"] == 0.0
     assert state.metrics["success"] == 0.0
+    assert state.metrics["task_reward"] == 0.0
+    assert all(
+        state.metrics[f"reward/task_{name}"] == 0.0 for name in env._TASK_REWARD_NAMES
+    )
     assert jnp.allclose(
         state.info["object_qpos"],
         jnp.asarray([0.8, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0]),
@@ -76,6 +80,8 @@ def test_push_enters_align_and_stops_crawl_before_contact():
     assert 0.0 < nxt.metrics["align_progress"] < 1.0
     assert not jnp.allclose(nxt.data.ctrl[12:18], env._home_ctrl[12:18])
     assert nxt.metrics["object_displacement"] < 1.0e-3
+    assert jnp.isfinite(nxt.reward)
+    assert jnp.isfinite(nxt.metrics["task_reward"])
     assert _tree_is_finite(nxt.data)
 
 
@@ -101,6 +107,31 @@ def test_push_align_reference_reaches_the_audited_arm_target():
         env._home_ctrl[12:18] + reference[12:18],
         env._align_arm_joint_target,
     )
+
+
+def test_push_task_reward_is_phase_gated_and_bounded():
+    env = Go2Z1PushEnv()
+    previous = env.reset(jax.random.PRNGKey(0))
+    current = previous.replace(
+        info={
+            **previous.info,
+            "phase": jnp.asarray(int(TaskPhase.APPROACH)),
+        },
+        metrics={
+            **previous.metrics,
+            "base_to_prepush_distance": (
+                previous.metrics["base_to_prepush_distance"] - 0.01
+            ),
+        },
+    )
+
+    components = env._task_reward_components(previous, current)
+
+    assert jnp.isclose(components["approach_progress"], 0.5)
+    assert components["align_progress"] == 0.0
+    assert components["push_progress"] == 0.0
+    assert components["hold"] == 0.0
+    assert components["success_bonus"] == 0.0
 
 
 def test_push_enters_push_after_completed_alignment():

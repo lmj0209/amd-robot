@@ -41,6 +41,15 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
     """Expose physical object and goal state without changing the 19-D action."""
 
     _TASK_OBSERVATION_SIZE = 12
+    _TASK_REWARD_NAMES = (
+        "approach_progress",
+        "align_progress",
+        "push_progress",
+        "hold",
+        "success_bonus",
+        "object_speed",
+        "object_height",
+    )
 
     def __init__(
         self,
@@ -51,6 +60,14 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         push_command_x: float = DEFAULT_PUSH_COMMAND_X,
         goal_threshold: float = DEFAULT_GOAL_THRESHOLD,
         success_hold_steps: int = DEFAULT_SUCCESS_HOLD_STEPS,
+        approach_progress_scale: float = 10.0,
+        align_progress_scale: float = 5.0,
+        push_progress_scale: float = 20.0,
+        hold_scale: float = 1.0,
+        success_bonus_scale: float = 10.0,
+        object_speed_limit: float = 0.5,
+        object_speed_cost_scale: float = 0.2,
+        object_height_cost_scale: float = 5.0,
         **kwargs,
     ) -> None:
         if approach_stop_distance <= 0.0:
@@ -65,6 +82,21 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("goal threshold must be positive")
         if success_hold_steps <= 0:
             raise ValueError("success hold steps must be positive")
+        if (
+            min(
+                approach_progress_scale,
+                align_progress_scale,
+                push_progress_scale,
+                hold_scale,
+                success_bonus_scale,
+            )
+            < 0.0
+        ):
+            raise ValueError("task reward scales must be non-negative")
+        if object_speed_limit <= 0.0:
+            raise ValueError("object speed limit must be positive")
+        if object_speed_cost_scale < 0.0 or object_height_cost_scale < 0.0:
+            raise ValueError("task cost scales must be non-negative")
         self._approach_stop_distance = float(approach_stop_distance)
         self._align_duration = float(align_duration)
         self._align_distance_threshold = float(align_distance_threshold)
@@ -74,6 +106,16 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         )
         self._goal_threshold = float(goal_threshold)
         self._success_hold_steps = int(success_hold_steps)
+        self._object_speed_limit = float(object_speed_limit)
+        self._task_reward_scales = {
+            "approach_progress": float(approach_progress_scale),
+            "align_progress": float(align_progress_scale),
+            "push_progress": float(push_progress_scale),
+            "hold": float(hold_scale),
+            "success_bonus": float(success_bonus_scale),
+            "object_speed": -float(object_speed_cost_scale),
+            "object_height": -float(object_height_cost_scale),
+        }
         kwargs.setdefault("home_keyframe", PUSH_HOME_KEYFRAME)
         kwargs.setdefault("ctrl_dt", 0.01)
         kwargs.setdefault("action_scale", 0.1)
@@ -227,8 +269,34 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             }
         )
         stepped = self._with_task_state(super().step(staged, action))
+        raw_task_rewards = self._task_reward_components(state, stepped)
+        scaled_task_rewards = {
+            name: jnp.nan_to_num(
+                raw_task_rewards[name] * self._task_reward_scales[name],
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+            )
+            for name in self._TASK_REWARD_NAMES
+        }
+        task_reward = jnp.nan_to_num(
+            sum(scaled_task_rewards.values()) * self.dt,
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        metrics = {
+            **stepped.metrics,
+            **{
+                f"reward/task_{name}": value * self.dt
+                for name, value in scaled_task_rewards.items()
+            },
+            "task_reward": task_reward,
+        }
         return stepped.replace(
-            done=jnp.maximum(stepped.done, stepped.metrics["success"])
+            reward=jnp.clip(stepped.reward + task_reward, 0.0, 10000.0),
+            done=jnp.maximum(stepped.done, stepped.metrics["success"]),
+            metrics=metrics,
         )
 
     def _task_actuator_reference(self, state) -> jax.Array:
@@ -242,6 +310,65 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             self._align_arm_joint_target - self._home_ctrl[12:18]
         )
         return jnp.zeros_like(self._home_ctrl).at[12:18].set(arm_offset)
+
+    def _task_reward_components(self, previous, current):
+        phase = current.info["phase"]
+        approach = phase == int(TaskPhase.APPROACH)
+        align = phase == int(TaskPhase.ALIGN)
+        push = phase == int(TaskPhase.PUSH)
+        hold = phase == int(TaskPhase.HOLD)
+        approach_progress = jnp.clip(
+            (
+                previous.metrics["base_to_prepush_distance"]
+                - current.metrics["base_to_prepush_distance"]
+            )
+            / self.dt,
+            -0.5,
+            0.5,
+        )
+        align_progress = jnp.clip(
+            (
+                previous.metrics["end_effector_to_push_distance"]
+                - current.metrics["end_effector_to_push_distance"]
+            )
+            / self.dt,
+            -0.5,
+            0.5,
+        )
+        push_progress = jnp.clip(
+            (
+                previous.metrics["object_to_goal_distance"]
+                - current.metrics["object_to_goal_distance"]
+            )
+            / self.dt,
+            -0.5,
+            0.5,
+        )
+        object_speed = jnp.linalg.norm(current.info["object_qvel"][:2])
+        speed_excess = jnp.maximum(
+            object_speed - self._object_speed_limit,
+            0.0,
+        )
+        object_height_error = jnp.maximum(
+            jnp.abs(current.metrics["object_height"] - 0.1) - 0.02,
+            0.0,
+        )
+        first_success = (current.metrics["success"] > 0.0) & (
+            previous.metrics["success"] <= 0.0
+        )
+        manipulating = push | hold
+        return {
+            "approach_progress": approach_progress * approach,
+            "align_progress": align_progress * align,
+            "push_progress": push_progress * push,
+            "hold": (
+                hold
+                & (current.metrics["object_to_goal_distance"] <= self._goal_threshold)
+            ).astype(jnp.float32),
+            "success_bonus": first_success.astype(jnp.float32),
+            "object_speed": jnp.square(speed_excess) * manipulating,
+            "object_height": jnp.square(object_height_error) * manipulating,
+        }
 
     def _task_vectors(self, data):
         world_to_base = _rotmat(data.qpos[3:7]).T
@@ -359,6 +486,10 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             ).astype(jnp.float32),
             "goal_threshold": jnp.asarray(self._goal_threshold),
         }
+        metrics.update(
+            {f"reward/task_{name}": jnp.zeros(()) for name in self._TASK_REWARD_NAMES}
+        )
+        metrics["task_reward"] = jnp.zeros(())
         return state.replace(
             obs=self._observation(
                 state.data,
