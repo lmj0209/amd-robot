@@ -628,6 +628,44 @@ def test_crawl_reference_qualification_changes_only_required_contracts() -> None
     assert crawl_evaluation == baseline_evaluation
 
 
+def test_crawl_residual_qualification_changes_only_action_scale() -> None:
+    reference = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_reference_qualification.yaml"
+        ).read_text()
+    )
+    residual = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_residual_qualification.yaml"
+        ).read_text()
+    )
+
+    assert residual["environment"]["action_scale"] == 0.1
+    assert reference["environment"]["action_scale"] == 0.3
+    for section in (
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert residual[section] == reference[section]
+
+    reference_environment = dict(reference["environment"])
+    residual_environment = dict(residual["environment"])
+    reference_environment["action_scale"] = 0.1
+    assert residual_environment == reference_environment
+
+    reference_reward = dict(reference["reward"])
+    residual_reward = dict(residual["reward"])
+    reference_reward.pop("profile")
+    residual_reward.pop("profile")
+    assert residual_reward == reference_reward
+
+
 def test_trot_dwell_qualification_adds_only_minimum_air_time() -> None:
     timing = yaml.safe_load(
         (

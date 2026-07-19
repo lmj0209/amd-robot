@@ -87,6 +87,11 @@ and RGC system fingerprint.
   0.06-radian body shift, and 0.45-radian knee lift.
   A 0.07-second sustained-air gate prevents contact-solver flicker from being
   counted or rewarded as a completed swing.
+- `locomotion_stage1_crawl_residual_qualification.yaml`: fresh-policy safety
+  qualification after the first crawl-residual policy became unsafe. It
+  changes only the policy residual range from +/-0.3 to +/-0.1 radians (plus
+  the run label), leaving the reference, command, reward, PPO, evaluation, and
+  ROCm contracts unchanged.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.
