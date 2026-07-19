@@ -360,7 +360,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             "command": command,
             "last_last_action": jnp.zeros(ACTION_LAYOUT.size),
             "feet_air_time": jnp.zeros(len(FOOT_SITE_NAMES)),
-            "last_contact": jnp.zeros(len(FOOT_SITE_NAMES), dtype=bool),
+            "last_contact": self._foot_floor_contacts(data),
             "swing_peak": jnp.zeros(len(FOOT_SITE_NAMES)),
         }
         if gait_phase is not None:

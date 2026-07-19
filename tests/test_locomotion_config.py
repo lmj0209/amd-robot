@@ -628,6 +628,40 @@ def test_crawl_reference_qualification_changes_only_required_contracts() -> None
     assert crawl_evaluation == baseline_evaluation
 
 
+def test_foot_space_reference_qualification_freezes_cpu_gate_parameters() -> None:
+    config = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_foot_space_reference_qualification.yaml"
+        ).read_text()
+    )
+
+    environment = config["environment"]
+    assert config["status"] == (
+        "locomotion_stage1_foot_space_reference_qualification"
+    )
+    assert environment["control_timestep"] == 0.01
+    assert environment["action_scale"] == 0.1
+    assert environment["leg_kp"] == 150.0
+    assert environment["leg_kd"] == 8.0
+    assert environment["foot_condim"] == 6
+    assert environment["gait_cycle_time"] == 4.0
+    assert environment["crawl_reference_enabled"] is True
+    assert environment["crawl_foot_space_enabled"] is True
+    assert environment["crawl_foot_step_length"] == 0.1
+    assert environment["crawl_foot_clearance"] == 0.06
+    assert environment["crawl_body_shift_x"] == 0.016
+    assert environment["crawl_body_shift_y"] == 0.02
+    assert environment["crawl_shift_end_fraction"] == 0.25
+    assert environment["crawl_lift_start_fraction"] == 0.45
+    assert environment["crawl_lift_end_fraction"] == 0.85
+    assert environment["crawl_pose_reference_enabled"] is True
+    assert config["manual_evaluation"]["fixed_command"] == [0.025, 0.0, 0.0]
+    assert config["rocm_guardrails"]["max_training_steps_per_host_call"] == 2
+    assert config["checkpoint"]["scope"] == "full_training_session"
+
+
 def test_crawl_residual_qualification_changes_only_action_scale() -> None:
     reference = yaml.safe_load(
         (

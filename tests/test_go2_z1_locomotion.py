@@ -258,6 +258,9 @@ def test_foot_space_crawl_is_opt_in_reachable_and_preserves_contracts() -> None:
     assert env.observation_size == 75
     assert state.info["crawl_foot_targets"].shape == (4, 3)
     assert jnp.all(state.info["crawl_ik_reachable"])
+    assert jnp.array_equal(
+        state.info["last_contact"], env._foot_floor_contacts(state.data)
+    )
     assert nxt.metrics["crawl_ik_reachable_fraction"] == 1.0
     assert jnp.all(jnp.isfinite(nxt.info["crawl_reference"]))
     assert jnp.allclose(nxt.data.ctrl[12:], env._home_ctrl[12:])

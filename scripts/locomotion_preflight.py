@@ -31,6 +31,7 @@ def main() -> int:
     parser.add_argument("--action-seed", type=int, default=9)
     parser.add_argument("--action-scale", type=float, default=0.25)
     parser.add_argument("--leg-kp", type=float)
+    parser.add_argument("--leg-kd", type=float)
     parser.add_argument("--gait-cycle-time", type=float)
     parser.add_argument("--trot-contact-scale", type=float, default=0.0)
     parser.add_argument("--trot-swing-height-cost-scale", type=float, default=0.0)
@@ -74,6 +75,7 @@ def main() -> int:
         or args.num_steps <= 0
         or args.action_scale <= 0.0
         or (args.leg_kp is not None and args.leg_kp <= 0.0)
+        or (args.leg_kd is not None and args.leg_kd < 0.0)
         or (args.gait_cycle_time is not None and args.gait_cycle_time <= 0.0)
         or args.trot_contact_scale < 0.0
         or args.trot_swing_height_cost_scale < 0.0
@@ -99,7 +101,8 @@ def main() -> int:
     ):
         parser.error(
             "--num-envs, --num-steps, --action-scale, --leg-kp, and "
-            "--gait-cycle-time must be positive when provided; trot reward "
+            "--gait-cycle-time must be positive when provided; --leg-kd must "
+            "be non-negative when provided; trot reward "
             "scales must be non-negative and trot timing shape parameters "
             "must be positive; minimum air time and crawl stride must be "
             "non-negative; crawl shift and lift must be positive; crawl "
@@ -129,6 +132,7 @@ def main() -> int:
     env = Go2Z1LocomotionEnv(
         action_scale=args.action_scale,
         leg_kp=args.leg_kp,
+        leg_kd=args.leg_kd,
         gait_cycle_time=args.gait_cycle_time,
         trot_contact_scale=args.trot_contact_scale,
         trot_swing_height_cost_scale=args.trot_swing_height_cost_scale,
@@ -351,6 +355,7 @@ def main() -> int:
         "physics_substeps": env.n_substeps,
         "action_scale": args.action_scale,
         "leg_kp": env._leg_kp,
+        "leg_kd": env._leg_kd,
         "gait_cycle_time": args.gait_cycle_time,
         "crawl_reference": args.crawl_reference,
         "crawl_stride": args.crawl_stride,

@@ -21,13 +21,14 @@ def test_env_matches_contract() -> None:
     assert not jnp.allclose(env.mj_model.qpos0[7:], env.mj_model.key_qpos[0, 7:])
 
 
-def test_leg_kp_override_preserves_the_pd_actuator_contract() -> None:
-    env = Go2Z1Env(leg_kp=40.0)
+def test_leg_pd_override_preserves_the_actuator_contract() -> None:
+    env = Go2Z1Env(leg_kp=40.0, leg_kd=8.0)
 
     assert env._leg_kp == 40.0
+    assert env._leg_kd == 8.0
     assert jnp.allclose(env.mj_model.actuator_gainprm[:12, 0], 40.0)
     assert jnp.allclose(env.mj_model.actuator_biasprm[:12, 1], -40.0)
-    assert jnp.allclose(env.mj_model.actuator_biasprm[:12, 2], -0.5)
+    assert jnp.allclose(env.mj_model.actuator_biasprm[:12, 2], -8.0)
     assert env.mj_model.actuator_gainprm[12, 0] == 1000.0
 
 

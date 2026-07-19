@@ -61,6 +61,7 @@ class Go2Z1Env(MjxEnv):
         ctrl_dt: float = 0.01,
         action_scale: float = 0.25,
         leg_kp: float | None = None,
+        leg_kd: float | None = None,
         tilt_limit_deg: float = 60.0,
         mask_arm: bool = True,
         foot_condim: int | None = None,
@@ -73,6 +74,10 @@ class Go2Z1Env(MjxEnv):
                 raise ValueError("leg_kp must be positive")
             self._mj_model.actuator_gainprm[:12, 0] = leg_kp
             self._mj_model.actuator_biasprm[:12, 1] = -leg_kp
+        if leg_kd is not None:
+            if leg_kd < 0.0:
+                raise ValueError("leg_kd must be non-negative")
+            self._mj_model.actuator_biasprm[:12, 2] = -leg_kd
         if foot_condim is not None:
             if foot_condim not in (1, 3, 4, 6):
                 raise ValueError(
@@ -101,6 +106,11 @@ class Go2Z1Env(MjxEnv):
             float(self._mj_model.actuator_gainprm[0, 0])
             if leg_kp is None
             else float(leg_kp)
+        )
+        self._leg_kd = (
+            -float(self._mj_model.actuator_biasprm[0, 2])
+            if leg_kd is None
+            else float(leg_kd)
         )
         self._tilt_limit = jnp.radians(float(tilt_limit_deg))
         self._mask_arm = bool(mask_arm)
