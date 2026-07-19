@@ -21,6 +21,7 @@ from amd_robo.envs.go2_kinematics import (  # noqa: E402
     go2_foot_space_crawl_reference,
 )
 from crawl_reference_sweep import (  # noqa: E402
+    CRAWL_SEQUENCE,
     DEFAULT_XML,
     FOOT_GEOM_NAMES,
     FOOT_SITE_NAMES,
@@ -132,6 +133,26 @@ def _reference_sequence(
     return np.asarray(references), bool(jnp.all(reachable))
 
 
+def _support_margin(
+    center_of_mass_xy: np.ndarray,
+    foot_positions_xy: np.ndarray,
+    excluded_leg: int,
+) -> float:
+    """Return signed COM distance to the three-foot support boundary."""
+
+    support = np.delete(foot_positions_xy, excluded_leg, axis=0)
+    centroid = np.mean(support, axis=0)
+    angles = np.arctan2(support[:, 1] - centroid[1], support[:, 0] - centroid[0])
+    support = support[np.argsort(angles)]
+    edges = np.roll(support, -1, axis=0) - support
+    relative_com = center_of_mass_xy - support
+    signed_distances = (
+        edges[:, 0] * relative_com[:, 1]
+        - edges[:, 1] * relative_com[:, 0]
+    ) / np.linalg.norm(edges, axis=1)
+    return float(np.min(signed_distances))
+
+
 def _run_candidate(
     xml_path: Path,
     candidate: Candidate,
@@ -164,6 +185,9 @@ def _run_candidate(
             mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, name)
             for name in FOOT_SITE_NAMES
         ]
+    )
+    base_body_id = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_BODY, "base"
     )
     home_qpos = (
         model.key_qpos[0].copy() if model.nkey > 0 else model.qpos0.copy()
@@ -204,8 +228,12 @@ def _run_candidate(
     nonfinite_state_count = 0
     max_tilt_deg = _tilt_deg(data)
     max_foot_height = data.site_xpos[foot_site_ids, 2].copy()
+    pre_lift_support_margin = np.full(4, np.inf)
+    active_swing_steps = np.zeros(4, dtype=np.int32)
+    active_swing_contact_steps = np.zeros(4, dtype=np.int32)
+    active_swing_max_height = np.full(4, -np.inf)
 
-    for reference in references:
+    for step_index, reference in enumerate(references):
         data.ctrl[:] = home_ctrl
         data.ctrl[:12] += reference
         data.ctrl[:] = np.clip(data.ctrl, ctrl_min, ctrl_max)
@@ -240,6 +268,37 @@ def _run_candidate(
         max_foot_height = np.maximum(
             max_foot_height, data.site_xpos[foot_site_ids, 2]
         )
+        quarter_position = (
+            4.0 * step_index * control_timestep / candidate.cycle_time
+        )
+        quarter_phase = quarter_position - np.floor(quarter_position)
+        active_leg = CRAWL_SEQUENCE[int(np.floor(quarter_position)) % 4]
+        if (
+            candidate.shift_end_fraction
+            <= quarter_phase
+            < candidate.lift_start_fraction
+        ):
+            margin = _support_margin(
+                data.subtree_com[base_body_id, :2],
+                data.site_xpos[foot_site_ids, :2],
+                active_leg,
+            )
+            pre_lift_support_margin[active_leg] = min(
+                pre_lift_support_margin[active_leg], margin
+            )
+        if (
+            candidate.lift_start_fraction
+            <= quarter_phase
+            < candidate.lift_end_fraction
+        ):
+            active_swing_steps[active_leg] += 1
+            active_swing_contact_steps[active_leg] += int(
+                foot_contact[active_leg]
+            )
+            active_swing_max_height[active_leg] = max(
+                active_swing_max_height[active_leg],
+                data.site_xpos[foot_site_ids[active_leg], 2],
+            )
 
     duration_s = num_steps * control_timestep
     displacement = float(data.qpos[0] - initial_x)
@@ -273,6 +332,11 @@ def _run_candidate(
         "touchdowns": touchdown_count.tolist(),
         "sustained_swings": sustained_swing_count.tolist(),
         "max_foot_height": max_foot_height.tolist(),
+        "pre_lift_support_margin": pre_lift_support_margin.tolist(),
+        "active_swing_contact_fraction": (
+            active_swing_contact_steps / active_swing_steps
+        ).tolist(),
+        "active_swing_max_height": active_swing_max_height.tolist(),
         "accepted": accepted,
     }
 
