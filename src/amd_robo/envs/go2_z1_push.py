@@ -311,6 +311,11 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         )
         return jnp.zeros_like(self._home_ctrl).at[12:18].set(arm_offset)
 
+    def _task_policy_action_mask(self, state) -> jax.Array:
+        """Expose policy residuals only while physically pushing the box."""
+        pushing = state.info["phase"] == int(TaskPhase.PUSH)
+        return jnp.full((self.action_size,), pushing, dtype=jnp.float32)
+
     def _task_reward_components(self, previous, current):
         phase = current.info["phase"]
         approach = phase == int(TaskPhase.APPROACH)

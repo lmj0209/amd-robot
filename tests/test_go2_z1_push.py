@@ -109,6 +109,28 @@ def test_push_align_reference_reaches_the_audited_arm_target():
     )
 
 
+def test_push_policy_residual_is_active_only_in_push_phase():
+    env = Go2Z1PushEnv()
+    state = env.reset(jax.random.PRNGKey(0))
+
+    for phase in (TaskPhase.APPROACH, TaskPhase.ALIGN, TaskPhase.HOLD):
+        staged = state.replace(
+            info={
+                **state.info,
+                "phase": jnp.asarray(int(phase)),
+            }
+        )
+        assert jnp.all(env._task_policy_action_mask(staged) == 0.0)
+
+    pushing = state.replace(
+        info={
+            **state.info,
+            "phase": jnp.asarray(int(TaskPhase.PUSH)),
+        }
+    )
+    assert jnp.all(env._task_policy_action_mask(pushing) == 1.0)
+
+
 def test_push_task_reward_is_phase_gated_and_bounded():
     env = Go2Z1PushEnv()
     previous = env.reset(jax.random.PRNGKey(0))

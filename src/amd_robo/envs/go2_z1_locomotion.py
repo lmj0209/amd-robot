@@ -455,7 +455,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         crawl_foot_targets = None
         crawl_ik_reachable = None
         if self._crawl_reference_enabled:
-            applied_action = policy_action
+            applied_action = policy_action * self._task_policy_action_mask(state)
             if self._mask_arm:
                 applied_action = applied_action * _LEG_MASK
             crawl_reference = self._crawl_joint_reference(
@@ -637,6 +637,11 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         """Return a task-specific actuator offset without changing action size."""
         del state
         return jnp.zeros_like(self._home_ctrl)
+
+    def _task_policy_action_mask(self, state) -> jax.Array:
+        """Return task-specific residual gates without changing action size."""
+        del state
+        return jnp.ones(ACTION_LAYOUT.size, dtype=jnp.float32)
 
     def _observation(
         self,
