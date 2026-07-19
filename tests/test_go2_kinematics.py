@@ -85,6 +85,16 @@ def test_foot_space_crawl_swings_forward_and_lifts_active_foot() -> None:
         lift_start_fraction=0.3,
         lift_end_fraction=0.8,
     )
+    before_lift = go2_foot_space_crawl_targets(
+        jnp.asarray(2.0 * jnp.pi * 0.05),
+        step_length=0.08,
+        foot_clearance=0.04,
+        body_shift_x=0.0,
+        body_shift_y=0.0,
+        shift_end_fraction=0.25,
+        lift_start_fraction=0.3,
+        lift_end_fraction=0.8,
+    )
     middle = go2_foot_space_crawl_targets(
         jnp.asarray(2.0 * jnp.pi * 0.125),
         step_length=0.08,
@@ -106,5 +116,6 @@ def test_foot_space_crawl_swings_forward_and_lifts_active_foot() -> None:
         lift_end_fraction=0.8,
     )
 
+    assert jnp.isclose(start[0, 0], before_lift[0, 0])
     assert start[0, 0] < end[0, 0]
     assert middle[0, 2] > GO2_HOME_FOOT_POSITIONS[0, 2] + 0.03

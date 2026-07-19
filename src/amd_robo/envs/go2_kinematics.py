@@ -161,7 +161,11 @@ def go2_foot_space_crawl_targets(
     )
 
     leg_phase = jnp.mod(cycle_position - _CRAWL_PHASE_OFFSETS, 1.0)
-    swing_progress = _smoothstep(leg_phase / 0.25)
+    slot_phase = leg_phase / 0.25
+    lift_duration = lift_end_fraction - lift_start_fraction
+    swing_progress = _smoothstep(
+        (slot_phase - lift_start_fraction) / lift_duration
+    )
     stance_progress = _smoothstep((leg_phase - 0.25) / 0.75)
     half_step = 0.5 * step_length
     foot_x = jnp.where(
@@ -170,7 +174,6 @@ def go2_foot_space_crawl_targets(
         half_step - step_length * stance_progress,
     )
 
-    lift_duration = lift_end_fraction - lift_start_fraction
     lift_progress = jnp.clip(
         (quarter_phase - lift_start_fraction) / lift_duration,
         0.0,
