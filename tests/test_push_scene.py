@@ -26,6 +26,7 @@ def test_push_scene_has_physical_box_and_noncontact_task_markers():
     floor_id = _id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
 
     assert model.nu == 19
+    assert model.opt.iterations == 4
     assert model.jnt_type[box_joint_id] == mujoco.mjtJoint.mjJNT_FREE
     assert model.body_jntnum[box_body_id] == 1
     assert model.geom_bodyid[box_geom_id] == box_body_id
@@ -48,3 +49,13 @@ def test_push_scene_has_physical_box_and_noncontact_task_markers():
         floor_id in (contact.geom1, contact.geom2)
         for contact in data.contact[: data.ncon]
     )
+
+    initial_box_position = data.qpos[box_qpos_adr : box_qpos_adr + 3].copy()
+    for _ in range(500):
+        mujoco.mj_step(model, data)
+
+    assert np.isfinite(data.qpos).all()
+    assert np.isfinite(data.qvel).all()
+    assert np.linalg.norm(
+        data.qpos[box_qpos_adr : box_qpos_adr + 3] - initial_box_position
+    ) < 1.0e-4

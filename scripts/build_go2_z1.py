@@ -79,6 +79,7 @@ PUSH_BOX_GEOM_NAME = "push_box"
 PREPUSH_SITE_NAME = "prepush_site"
 GOAL_SITE_NAME = "goal_site"
 PUSH_KEYFRAME_NAME = "push_home"
+PUSH_SOLVER_ITERATIONS = 4
 PUSH_BOX_INITIAL_POS = (0.8, 0.0, 0.1)
 PREPUSH_POS = (0.5, 0.0, 0.015)
 GOAL_POS = (1.2, 0.0, 0.005)
@@ -298,6 +299,9 @@ def build_push_scene() -> ET.Element:
     """Add a physical near-field box and visual task markers to the flat scene."""
     scene = build_scene()
     scene.set("model", "go2_z1 push scene")
+    scene.insert(
+        1, ET.Element("option", {"iterations": str(PUSH_SOLVER_ITERATIONS)})
+    )
     worldbody = scene.find("worldbody")
     if worldbody is None:
         raise SystemExit(f"worldbody missing in {GO2_SCENE_XML}")
@@ -472,6 +476,7 @@ def audit(
             goal_site_id,
         ) >= 0, "push task object or marker is missing"
         assert model.jnt_type[box_joint_id] == mujoco.mjtJoint.mjJNT_FREE
+        assert model.opt.iterations == PUSH_SOLVER_ITERATIONS
         assert joint_names[-1] == PUSH_BOX_JOINT_NAME
         box_qpos_adr = model.jnt_qposadr[box_joint_id]
         assert np.allclose(

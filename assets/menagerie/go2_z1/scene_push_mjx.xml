@@ -1,6 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <mujoco model="go2_z1 push scene">
   <include file="go2_z1.xml" />
+  <option iterations="4" />
   <visual>
     <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0" />
     <rgba haze="0.15 0.25 0.35 1" />
