@@ -28,6 +28,11 @@ and RGC system fingerprint.
   approximate peak residual PD force unchanged. The official Go1 value `0.5`
   and an intermediate `0.35` failed this robot's random-action finite-state
   gate.
+- `locomotion_stage1_tracking_qualification.yaml`: a fresh-policy
+  single-variable qualification that raises only the linear tracking scale
+  from `2.0` to `3.0` while retaining the Kp40/scale0.30 safety contract. The
+  measured v33 run remained finite but increased tilt without establishing a
+  normal gait, so its policy and session are not continuation sources.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.
