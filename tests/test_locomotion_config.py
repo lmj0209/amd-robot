@@ -601,3 +601,41 @@ def test_trot_dwell_qualification_adds_only_minimum_air_time() -> None:
     dwell_reward.pop("profile")
     dwell_reward.pop("trot_timing_min_air_time")
     assert dwell_reward == timing_reward
+
+
+def test_trot_dwell_extension_changes_only_additional_budget() -> None:
+    qualification = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_trot_dwell_qualification.yaml"
+        ).read_text()
+    )
+    extension = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_trot_dwell_extension.yaml"
+        ).read_text()
+    )
+
+    assert extension["ppo"]["num_timesteps"] == 1572864
+    for section in (
+        "environment",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert extension[section] == qualification[section]
+
+    qualification_reward = dict(qualification["reward"])
+    extension_reward = dict(extension["reward"])
+    qualification_reward.pop("profile")
+    extension_reward.pop("profile")
+    assert extension_reward == qualification_reward
+
+    qualification_ppo = dict(qualification["ppo"])
+    extension_ppo = dict(extension["ppo"])
+    qualification_ppo.pop("num_timesteps")
+    extension_ppo.pop("num_timesteps")
+    assert extension_ppo == qualification_ppo

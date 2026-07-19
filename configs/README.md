@@ -74,6 +74,10 @@ and RGC system fingerprint.
   contact-chatter loophole observed in the timing qualification. The timing
   score ramps from zero to full value only after one synchronized diagonal
   swing pair remains airborne for 0.1 seconds.
+- `locomotion_stage1_trot_dwell_extension.yaml`: restores the complete dwell
+  qualification session and adds 1,572,864 transitions, reaching 2,097,152
+  total steps without changing the environment, reward, PPO, or ROCm
+  guardrail contract.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.
