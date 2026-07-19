@@ -37,6 +37,7 @@ def main() -> int:
     parser.add_argument("--trot-timing-scale", type=float, default=0.0)
     parser.add_argument("--trot-timing-std", type=float, default=0.1)
     parser.add_argument("--trot-timing-max-error", type=float, default=0.2)
+    parser.add_argument("--trot-timing-min-air-time", type=float, default=0.0)
     parser.add_argument(
         "--zero-actions",
         action="store_true",
@@ -64,12 +65,13 @@ def main() -> int:
         or args.trot_timing_scale < 0.0
         or args.trot_timing_std <= 0.0
         or args.trot_timing_max_error <= 0.0
+        or args.trot_timing_min_air_time < 0.0
     ):
         parser.error(
             "--num-envs, --num-steps, --action-scale, --leg-kp, and "
             "--gait-cycle-time must be positive when provided; trot reward "
             "scales must be non-negative and trot timing shape parameters "
-            "must be positive"
+            "must be positive; minimum air time must be non-negative"
         )
     if args.gait_cycle_time is None and (
         args.trot_contact_scale > 0.0
@@ -89,6 +91,7 @@ def main() -> int:
         trot_timing_scale=args.trot_timing_scale,
         trot_timing_std=args.trot_timing_std,
         trot_timing_max_error=args.trot_timing_max_error,
+        trot_timing_min_air_time=args.trot_timing_min_air_time,
     )
     rollout_env = env
     if args.training_wrapper:

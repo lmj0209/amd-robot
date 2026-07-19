@@ -70,6 +70,10 @@ and RGC system fingerprint.
   consistency score. It synchronizes FL+RR and FR+RL internally while
   rewarding opposition across the two diagonal groups. All PPO, control, and
   ROCm guardrail settings remain identical to the first trot qualification.
+- `locomotion_stage1_trot_dwell_qualification.yaml`: closes the high-frequency
+  contact-chatter loophole observed in the timing qualification. The timing
+  score ramps from zero to full value only after one synchronized diagonal
+  swing pair remains airborne for 0.1 seconds.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.

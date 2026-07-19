@@ -567,3 +567,37 @@ def test_trot_timing_qualification_changes_only_contact_shaping() -> None:
     ):
         timing_reward.pop(key)
     assert timing_reward == phase_reward
+
+
+def test_trot_dwell_qualification_adds_only_minimum_air_time() -> None:
+    timing = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_trot_timing_qualification.yaml"
+        ).read_text()
+    )
+    dwell = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_trot_dwell_qualification.yaml"
+        ).read_text()
+    )
+
+    for section in (
+        "environment",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert dwell[section] == timing[section]
+
+    assert dwell["reward"]["trot_timing_min_air_time"] == 0.1
+    timing_reward = dict(timing["reward"])
+    dwell_reward = dict(dwell["reward"])
+    timing_reward.pop("profile")
+    dwell_reward.pop("profile")
+    dwell_reward.pop("trot_timing_min_air_time")
+    assert dwell_reward == timing_reward

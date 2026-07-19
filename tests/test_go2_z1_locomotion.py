@@ -98,6 +98,10 @@ def test_trot_phase_alternates_diagonal_contact_targets() -> None:
         ),
         ({"trot_timing_std": 0.0}, "trot timing std and max error must be positive"),
         (
+            {"trot_timing_min_air_time": -0.1},
+            "trot timing minimum air time must be non-negative",
+        ),
+        (
             {"trot_timing_scale": 1.0},
             "trot reward scales require gait_cycle_time",
         ),
@@ -145,3 +149,23 @@ def test_trot_timing_prefers_alternating_diagonal_pairs_over_standing() -> None:
 
     assert jnp.isclose(alternating, 1.0)
     assert alternating > standing
+
+
+def test_trot_timing_dwell_gate_rejects_fast_contact_chatter() -> None:
+    chatter = Go2Z1LocomotionEnv._trot_timing_score(
+        air_time=jnp.asarray([0.0, 0.01, 0.01, 0.0]),
+        contact_time=jnp.asarray([0.01, 0.0, 0.0, 0.01]),
+        std=0.1,
+        max_error=0.2,
+        min_air_time=0.1,
+    )
+    sustained = Go2Z1LocomotionEnv._trot_timing_score(
+        air_time=jnp.asarray([0.0, 0.1, 0.1, 0.0]),
+        contact_time=jnp.asarray([0.1, 0.0, 0.0, 0.1]),
+        std=0.1,
+        max_error=0.2,
+        min_air_time=0.1,
+    )
+
+    assert jnp.isclose(chatter, 0.1)
+    assert jnp.isclose(sustained, 1.0)

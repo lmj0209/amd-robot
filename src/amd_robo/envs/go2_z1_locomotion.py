@@ -76,6 +76,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         trot_timing_scale: float = 0.0,
         trot_timing_std: float = 0.1,
         trot_timing_max_error: float = 0.2,
+        trot_timing_min_air_time: float = 0.0,
         termination_cost_scale: float = 2.0,
         illegal_contact_cost_scale: float = 2.0,
         workspace_limit: float = 5.0,
@@ -101,6 +102,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             raise ValueError("trot reward scales must be non-negative")
         if trot_timing_std <= 0.0 or trot_timing_max_error <= 0.0:
             raise ValueError("trot timing std and max error must be positive")
+        if trot_timing_min_air_time < 0.0:
+            raise ValueError("trot timing minimum air time must be non-negative")
         if gait_cycle_time is None and (
             trot_contact_scale > 0.0
             or trot_swing_height_cost_scale > 0.0
@@ -126,6 +129,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         self._trot_timing_enabled = trot_timing_scale > 0.0
         self._trot_timing_std = float(trot_timing_std)
         self._trot_timing_max_error = float(trot_timing_max_error)
+        self._trot_timing_min_air_time = float(trot_timing_min_air_time)
         self._reward_names = self._BASE_REWARD_NAMES
         if self._gait_cycle_time is not None:
             self._reward_names += ("trot_contact", "trot_swing_height")
@@ -573,6 +577,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                     current_contact_time,
                     self._trot_timing_std,
                     self._trot_timing_max_error,
+                    self._trot_timing_min_air_time,
                 )
                 * moving
                 * upright
@@ -597,6 +602,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         contact_time: jax.Array,
         std: float,
         max_error: float,
+        min_air_time: float = 0.0,
     ) -> jax.Array:
         """Reward diagonal-pair timing agreement and pair opposition."""
 
@@ -619,7 +625,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
 
         # FL+RR and FR+RL are internally synchronized. Every cross-pair
         # combination is expected to be in the opposite contact mode.
-        return (
+        timing_score = (
             sync_reward(0, 3)
             * sync_reward(1, 2)
             * async_reward(0, 1)
@@ -627,3 +633,12 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             * async_reward(0, 2)
             * async_reward(1, 3)
         )
+        if min_air_time <= 0.0:
+            return timing_score
+
+        diagonal_air_time = jnp.maximum(
+            jnp.minimum(air_time[0], air_time[3]),
+            jnp.minimum(air_time[1], air_time[2]),
+        )
+        dwell_gate = jnp.clip(diagonal_air_time / min_air_time, 0.0, 1.0)
+        return timing_score * dwell_gate
