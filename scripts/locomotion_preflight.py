@@ -140,6 +140,7 @@ def main() -> int:
         reset_fn = jax.jit(jax.vmap(rollout_env.reset))
         step_fn = jax.jit(jax.vmap(rollout_env.step))
     state = reset_fn(keys)
+    initial_x = state.data.qpos[:, 0]
     if args.zero_actions:
         actions = jnp.zeros((args.num_envs, env.action_size))
     else:
@@ -160,6 +161,9 @@ def main() -> int:
     min_reward = float("inf")
     max_reward = float("-inf")
     max_abs_actuator_force = 0.0
+    forward_velocity_total = jnp.zeros(())
+    tilt_total = jnp.zeros(())
+    max_tilt_deg = 0.0
     reward_metric_names = tuple(
         key for key in state.metrics if key.startswith("reward/")
     )
@@ -211,6 +215,14 @@ def main() -> int:
         max_abs_actuator_force = max(
             max_abs_actuator_force,
             float(jnp.max(jnp.abs(state.data.actuator_force)).block_until_ready()),
+        )
+        forward_velocity_total += jnp.mean(
+            state.metrics["base_forward_velocity"]
+        )
+        tilt_total += jnp.mean(state.metrics["tilt_deg"])
+        max_tilt_deg = max(
+            max_tilt_deg,
+            float(jnp.max(state.metrics["tilt_deg"]).block_until_ready()),
         )
         for key in reward_metric_names:
             max_abs_reward_components[key] = max(
@@ -327,6 +339,14 @@ def main() -> int:
         "mean_forward_velocity": float(
             jnp.mean(state.metrics["base_forward_velocity"])
         ),
+        "trajectory_mean_forward_velocity": float(
+            forward_velocity_total / args.num_steps
+        ),
+        "mean_forward_displacement": float(
+            jnp.mean(state.data.qpos[:, 0] - initial_x)
+        ),
+        "trajectory_mean_tilt_deg": float(tilt_total / args.num_steps),
+        "max_tilt_deg": max_tilt_deg,
         "mean_tracking_error": float(jnp.mean(state.metrics["tracking_linear_error"])),
         "zero_actions": args.zero_actions,
         "resample_actions": args.resample_actions,
