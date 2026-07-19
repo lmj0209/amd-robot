@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import inspect
 import json
@@ -380,6 +381,12 @@ def main() -> int:
     normalize_observations = (
         ppo_config["normalize_observations"] and not args.no_normalize_observations
     )
+    policy_hidden_layer_sizes = tuple(
+        ppo_config.get("policy_hidden_layer_sizes", (32, 32, 32, 32))
+    )
+    value_hidden_layer_sizes = tuple(
+        ppo_config.get("value_hidden_layer_sizes", (256, 256, 256, 256, 256))
+    )
     if args.eval_only:
         eval_sources = int(bool(args.params_in)) + int(
             bool(args.resume_training_state)
@@ -410,10 +417,14 @@ def main() -> int:
         or num_envs <= 0
         or batch_size <= 0
         or num_minibatches <= 0
+        or not policy_hidden_layer_sizes
+        or not value_hidden_layer_sizes
+        or any(size <= 0 for size in policy_hidden_layer_sizes)
+        or any(size <= 0 for size in value_hidden_layer_sizes)
     ):
         parser.error(
             "timesteps must be non-negative; episode length and learning rate "
-            "and PPO batch dimensions must be positive"
+            "and PPO batch and network dimensions must be positive"
         )
     if batch_size * num_minibatches % num_envs:
         parser.error("batch_size * num_minibatches must be divisible by num_envs")
@@ -422,6 +433,7 @@ def main() -> int:
 
     _compat.apply_brax_compat()
     from brax.io import model as brax_model
+    from brax.training.agents.ppo import networks as ppo_networks
     from brax.training.agents.ppo import train as ppo
     from mujoco_playground import wrapper
 
@@ -463,6 +475,8 @@ def main() -> int:
         f"learning_rate_schedule={learning_rate_schedule} "
         f"desired_kl={desired_kl} "
         f"normalize_observations={normalize_observations} "
+        f"policy_hidden_layer_sizes={policy_hidden_layer_sizes} "
+        f"value_hidden_layer_sizes={value_hidden_layer_sizes} "
         f"config={args.config} config_sha256={config_sha256} "
         f"seed={config['seed']} "
         f"matmul_precision="
@@ -525,6 +539,8 @@ def main() -> int:
             "learning_rate_schedule": learning_rate_schedule,
             "desired_kl": desired_kl,
             "normalize_observations": normalize_observations,
+            "policy_hidden_layer_sizes": policy_hidden_layer_sizes,
+            "value_hidden_layer_sizes": value_hidden_layer_sizes,
             "seed": config["seed"],
         }
         training_session_fn = make_training_session_checkpoint_callback(
@@ -689,6 +705,11 @@ def main() -> int:
         num_updates_per_batch=ppo_config["num_updates_per_batch"],
         max_grad_norm=ppo_config["max_grad_norm"],
         normalize_observations=normalize_observations,
+        network_factory=functools.partial(
+            ppo_networks.make_ppo_networks,
+            policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+            value_hidden_layer_sizes=value_hidden_layer_sizes,
+        ),
         num_evals=brax_num_evals,
         num_eval_envs=4,
         run_evals=False,

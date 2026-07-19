@@ -253,3 +253,42 @@ def test_tracking_qualification_changes_only_linear_tracking_scale() -> None:
         baseline_reward.pop(key)
         tracking_reward.pop(key)
     assert tracking_reward == baseline_reward
+
+
+def test_network_probe_changes_only_network_and_probe_budget() -> None:
+    baseline = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_action_scale_qualification.yaml"
+        ).read_text()
+    )
+    probe = yaml.safe_load(
+        (
+            REPO_ROOT / "configs" / "locomotion_stage1_network_probe.yaml"
+        ).read_text()
+    )
+
+    assert probe["ppo"]["policy_hidden_layer_sizes"] == [512, 256, 128]
+    assert probe["ppo"]["value_hidden_layer_sizes"] == [512, 256, 128]
+    assert probe["ppo"]["num_timesteps"] == 4096
+    assert probe["manual_evaluation"]["enabled"] is False
+    assert probe["checkpoint"]["interval_steps"] == 4096
+    for section in ("environment", "reward", "rocm_guardrails"):
+        baseline_values = dict(baseline[section])
+        probe_values = dict(probe[section])
+        if section == "reward":
+            baseline_values.pop("profile")
+            probe_values.pop("profile")
+        assert probe_values == baseline_values
+
+    baseline_ppo = dict(baseline["ppo"])
+    probe_ppo = dict(probe["ppo"])
+    for key in (
+        "num_timesteps",
+        "policy_hidden_layer_sizes",
+        "value_hidden_layer_sizes",
+    ):
+        baseline_ppo.pop(key, None)
+        probe_ppo.pop(key, None)
+    assert probe_ppo == baseline_ppo

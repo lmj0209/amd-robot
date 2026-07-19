@@ -33,6 +33,10 @@ and RGC system fingerprint.
   from `2.0` to `3.0` while retaining the Kp40/scale0.30 safety contract. The
   measured v33 run remained finite but increased tilt without establishing a
   normal gait, so its policy and session are not continuation sources.
+- `locomotion_stage1_network_probe.yaml`: a 4,096-step compile and finite-update
+  gate for the upstream Go1/ATEC-sized `[512, 256, 128]` policy and value
+  networks. It retains the 256-environment, five-substep, host-scan-two ROCm
+  contract and does not qualify a locomotion policy.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.
