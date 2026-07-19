@@ -42,7 +42,12 @@ def main() -> int:
     illegal_contact_count = jnp.zeros((), dtype=jnp.int32)
     nonfinite_state_count = jnp.zeros((), dtype=jnp.int32)
     three_or_more_contact_total = jnp.zeros(())
+    robot_box_contact_total = jnp.zeros(())
     max_tilt_deg = jnp.zeros(())
+    max_object_height = jnp.max(state.info["object_pos"][:, 2])
+    max_object_speed = jnp.zeros(())
+    minimum_goal_distance = initial_goal_distance
+    minimum_prepush_distance = initial_prepush_distance
 
     for _ in range(args.num_steps):
         state = step_fn(state, actions)
@@ -56,8 +61,38 @@ def main() -> int:
         three_or_more_contact_total += jnp.mean(
             jnp.sum(state.info["last_contact"], axis=-1) >= 3
         )
+        contact = state.data._impl.contact
+        geom1, geom2 = contact.geom[:, :, 0], contact.geom[:, :, 1]
+        active = contact.dist < 0.0
+        box_contact = (geom1 == env._box_geom_id) | (
+            geom2 == env._box_geom_id
+        )
+        other_geom = jnp.where(geom1 == env._box_geom_id, geom2, geom1)
+        robot_box_contact_total += jnp.mean(
+            jnp.any(
+                active
+                & box_contact
+                & (other_geom != env._floor_geom_id),
+                axis=-1,
+            )
+        )
         max_tilt_deg = jnp.maximum(
             max_tilt_deg, jnp.max(state.metrics["tilt_deg"])
+        )
+        max_object_height = jnp.maximum(
+            max_object_height, jnp.max(state.info["object_pos"][:, 2])
+        )
+        max_object_speed = jnp.maximum(
+            max_object_speed,
+            jnp.max(jnp.linalg.norm(state.info["object_qvel"][:, :3], axis=-1)),
+        )
+        minimum_goal_distance = jnp.minimum(
+            minimum_goal_distance,
+            jnp.mean(state.metrics["object_to_goal_distance"]),
+        )
+        minimum_prepush_distance = jnp.minimum(
+            minimum_prepush_distance,
+            jnp.mean(state.metrics["base_to_prepush_distance"]),
         )
 
     _block_tree(state)
@@ -75,15 +110,25 @@ def main() -> int:
         "physics_substeps": env.n_substeps,
         "solver_iterations": int(env.mj_model.opt.iterations),
         "initial_base_to_prepush_distance": float(initial_prepush_distance),
+        "minimum_base_to_prepush_distance": float(minimum_prepush_distance),
         "final_base_to_prepush_distance": float(
             jnp.mean(state.metrics["base_to_prepush_distance"])
         ),
         "initial_object_to_goal_distance": float(initial_goal_distance),
+        "minimum_object_to_goal_distance": float(minimum_goal_distance),
         "final_object_to_goal_distance": float(
             jnp.mean(state.metrics["object_to_goal_distance"])
         ),
+        "final_object_position": [
+            float(value) for value in jnp.mean(state.info["object_pos"], axis=0)
+        ],
+        "max_object_height": float(max_object_height),
+        "max_object_speed": float(max_object_speed),
         "mean_object_displacement": float(jnp.mean(object_displacement)),
         "max_object_displacement": float(jnp.max(object_displacement)),
+        "robot_box_contact_fraction": float(
+            robot_box_contact_total / args.num_steps
+        ),
         "three_or_more_contact_fraction": float(
             three_or_more_contact_total / args.num_steps
         ),
