@@ -71,6 +71,48 @@ def test_push_near_field_qualification_spans_the_physical_oracle() -> None:
     assert config["checkpoint"]["scope"] == "full_training_session"
 
 
+def test_push_position_x_qualification_changes_only_initial_object_x() -> None:
+    fixed = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_qualification.yaml"
+        ).read_text()
+    )
+    randomized = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_qualification.yaml"
+        ).read_text()
+    )
+
+    assert randomized["status"] == "push_stage2_position_x_qualification"
+    assert randomized["push"]["object_position_x_offset_range"] == [-0.02, 0.02]
+    assert randomized["push"]["object_position_y_offset_range"] == [0.0, 0.0]
+    for section in (
+        "environment",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert randomized[section] == fixed[section]
+
+    fixed_push = dict(fixed["push"])
+    randomized_push = dict(randomized["push"])
+    randomized_push.pop("object_position_x_offset_range")
+    randomized_push.pop("object_position_y_offset_range")
+    assert randomized_push == fixed_push
+
+    fixed_reward = dict(fixed["reward"])
+    randomized_reward = dict(randomized["reward"])
+    fixed_reward.pop("profile")
+    randomized_reward.pop("profile")
+    assert randomized_reward == fixed_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 

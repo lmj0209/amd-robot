@@ -66,6 +66,31 @@ def test_push_step_allows_box_floor_contact_and_stays_finite():
     assert _tree_is_finite(nxt.data)
 
 
+def test_push_reset_randomizes_object_x_and_moves_prepush_target_with_it():
+    env = Go2Z1PushEnv(
+        object_position_x_offset_range=(-0.02, 0.02),
+        object_position_y_offset_range=(0.0, 0.0),
+    )
+    keys = jax.random.split(jax.random.PRNGKey(20260719), 8)
+    reset = jax.jit(jax.vmap(env.reset))
+    state = reset(keys)
+    repeated = reset(keys)
+    _block_tree(state)
+    _block_tree(repeated)
+
+    object_x = state.info["object_pos"][:, 0]
+    object_y = state.info["object_pos"][:, 1]
+    assert jnp.all(object_x >= 0.78)
+    assert jnp.all(object_x <= 0.82)
+    assert jnp.ptp(object_x) > 0.01
+    assert jnp.allclose(object_y, 0.0)
+    assert jnp.allclose(state.info["prepush_pos"][:, 0], object_x - 0.3)
+    assert jnp.allclose(state.info["prepush_pos"][:, 1], object_y)
+    assert jnp.allclose(state.metrics["object_displacement"], 0.0, atol=1.0e-6)
+    assert jnp.allclose(state.info["object_qpos"], repeated.info["object_qpos"])
+    assert _tree_is_finite(state.data)
+
+
 def test_push_enters_align_and_stops_crawl_before_contact():
     env = Go2Z1PushEnv(approach_stop_distance=1.0)
     state = jax.jit(env.reset)(jax.random.PRNGKey(0))

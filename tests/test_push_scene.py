@@ -35,7 +35,7 @@ def test_push_scene_has_physical_box_and_noncontact_task_markers():
     assert model.body_jntnum[box_body_id] == 1
     assert model.geom_bodyid[box_geom_id] == box_body_id
     assert model.site_bodyid[push_contact_site_id] == box_body_id
-    assert model.site_bodyid[prepush_site_id] == 0
+    assert model.site_bodyid[prepush_site_id] == box_body_id
     assert model.site_bodyid[goal_site_id] == 0
     np.testing.assert_allclose(
         model.site_pos[end_effector_site_id], [0.186, 0.0, -0.009]
@@ -49,7 +49,9 @@ def test_push_scene_has_physical_box_and_noncontact_task_markers():
         model.key_qpos[push_key_id, box_qpos_adr : box_qpos_adr + 7],
         [0.8, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0],
     )
-    np.testing.assert_allclose(model.site_pos[prepush_site_id], [0.5, 0.0, 0.015])
+    np.testing.assert_allclose(
+        model.site_pos[prepush_site_id], [-0.3, 0.0, -0.085]
+    )
     np.testing.assert_allclose(model.site_pos[goal_site_id], [1.2, 0.0, 0.005])
 
     data = mujoco.MjData(model)

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import jax
 import jax.numpy as jnp
 import mujoco
+from mujoco import mjx
 
 from amd_robo.contracts import TaskPhase
 from amd_robo.envs.go2_z1 import REPO_ROOT, _rotmat
@@ -69,6 +71,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         object_speed_cost_scale: float = 20.0,
         object_height_tolerance: float = 0.02,
         object_height_cost_scale: float = 5.0,
+        object_position_x_offset_range: Sequence[float] = (0.0, 0.0),
+        object_position_y_offset_range: Sequence[float] = (0.0, 0.0),
         **kwargs,
     ) -> None:
         if approach_stop_distance <= 0.0:
@@ -100,6 +104,18 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("object height tolerance must be positive")
         if object_speed_cost_scale < 0.0 or object_height_cost_scale < 0.0:
             raise ValueError("task cost scales must be non-negative")
+        for axis, offset_range in (
+            ("x", object_position_x_offset_range),
+            ("y", object_position_y_offset_range),
+        ):
+            if len(offset_range) != 2:
+                raise ValueError(
+                    f"object position {axis} offset range must contain [min, max]"
+                )
+            if offset_range[0] > offset_range[1]:
+                raise ValueError(
+                    f"object position {axis} offset range must be ordered"
+                )
         self._approach_stop_distance = float(approach_stop_distance)
         self._align_duration = float(align_duration)
         self._align_distance_threshold = float(align_distance_threshold)
@@ -111,6 +127,19 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         self._success_hold_steps = int(success_hold_steps)
         self._object_speed_limit = float(object_speed_limit)
         self._object_height_tolerance = float(object_height_tolerance)
+        self._object_position_x_offset_range = tuple(
+            float(value) for value in object_position_x_offset_range
+        )
+        self._object_position_y_offset_range = tuple(
+            float(value) for value in object_position_y_offset_range
+        )
+        self._randomize_object_position = any(
+            value != 0.0
+            for value in (
+                *self._object_position_x_offset_range,
+                *self._object_position_y_offset_range,
+            )
+        )
         self._task_reward_scales = {
             "approach_progress": float(approach_progress_scale),
             "align_progress": float(align_progress_scale),
@@ -193,6 +222,32 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
 
     def reset(self, rng: jax.Array):
         state = super().reset(rng)
+        if self._randomize_object_position:
+            object_x_key, object_y_key = jax.random.split(state.info["rng"])
+            object_offset = jnp.asarray(
+                [
+                    jax.random.uniform(
+                        object_x_key,
+                        (),
+                        minval=self._object_position_x_offset_range[0],
+                        maxval=self._object_position_x_offset_range[1],
+                    ),
+                    jax.random.uniform(
+                        object_y_key,
+                        (),
+                        minval=self._object_position_y_offset_range[0],
+                        maxval=self._object_position_y_offset_range[1],
+                    ),
+                ]
+            )
+            object_qpos = state.data.qpos[self._box_qpos_slice]
+            object_qpos = object_qpos.at[:2].set(
+                self._initial_box_qpos[:2] + object_offset
+            )
+            data = state.data.replace(
+                qpos=state.data.qpos.at[self._box_qpos_slice].set(object_qpos)
+            )
+            state = state.replace(data=mjx.forward(self.mjx_model, data))
         state = state.replace(
             info={
                 **state.info,
@@ -459,6 +514,26 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         ) = self._task_vectors(state.data)
         object_qpos = state.data.qpos[self._box_qpos_slice]
         object_qvel = state.data.qvel[self._box_qvel_slice]
+        if self._randomize_object_position:
+            object_x_key, object_y_key = jax.random.split(state.info["rng"])
+            initial_object_xy = self._initial_box_qpos[:2] + jnp.asarray(
+                [
+                    jax.random.uniform(
+                        object_x_key,
+                        (),
+                        minval=self._object_position_x_offset_range[0],
+                        maxval=self._object_position_x_offset_range[1],
+                    ),
+                    jax.random.uniform(
+                        object_y_key,
+                        (),
+                        minval=self._object_position_y_offset_range[0],
+                        maxval=self._object_position_y_offset_range[1],
+                    ),
+                ]
+            )
+        else:
+            initial_object_xy = self._initial_box_qpos[:2]
         info = {
             **state.info,
             "object_qpos": object_qpos,
@@ -478,7 +553,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
                 object_position[:2] - goal_position[:2]
             ),
             "object_displacement": jnp.linalg.norm(
-                object_qpos[:2] - self._initial_box_qpos[:2]
+                object_qpos[:2] - initial_object_xy
             ),
             "object_height": object_position[2],
             "end_effector_to_push_distance": jnp.linalg.norm(

@@ -240,6 +240,10 @@ def _sequential_eval(
             push_max_object_speed = jnp.zeros(())
             push_min_object_height = jnp.full((), jnp.inf)
             push_max_object_height = jnp.full((), -jnp.inf)
+            push_initial_object_x_min = jnp.min(state.info["object_pos"][:, 0])
+            push_initial_object_x_max = jnp.max(state.info["object_pos"][:, 0])
+            push_initial_object_y_min = jnp.min(state.info["object_pos"][:, 1])
+            push_initial_object_y_max = jnp.max(state.info["object_pos"][:, 1])
             first_phase_steps = {
                 phase: jnp.full((n_envs,), -1, dtype=jnp.int32)
                 for phase in TaskPhase
@@ -491,6 +495,18 @@ def _sequential_eval(
                     "push_max_object_speed": float(push_max_object_speed),
                     "push_min_object_height": float(push_min_object_height),
                     "push_max_object_height": float(push_max_object_height),
+                    "push_initial_object_x_min": float(
+                        push_initial_object_x_min
+                    ),
+                    "push_initial_object_x_max": float(
+                        push_initial_object_x_max
+                    ),
+                    "push_initial_object_y_min": float(
+                        push_initial_object_y_min
+                    ),
+                    "push_initial_object_y_max": float(
+                        push_initial_object_y_max
+                    ),
                     **push_failure_counts,
                 }
             )
