@@ -89,6 +89,15 @@ def _make_env(
         crawl_stride=environment.get("crawl_stride", 0.08),
         crawl_shift=environment.get("crawl_shift", 0.06),
         crawl_lift=environment.get("crawl_lift", 0.45),
+        crawl_shift_end_fraction=environment.get(
+            "crawl_shift_end_fraction", 0.3
+        ),
+        crawl_lift_start_fraction=environment.get(
+            "crawl_lift_start_fraction", 0.3
+        ),
+        crawl_lift_end_fraction=environment.get(
+            "crawl_lift_end_fraction", 0.8
+        ),
         crawl_min_air_time=environment.get("crawl_min_air_time", 0.07),
         crawl_pose_reference_enabled=environment.get(
             "crawl_pose_reference_enabled", False

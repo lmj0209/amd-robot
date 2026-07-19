@@ -36,6 +36,9 @@ class Candidate:
     stride: float
     shift: float
     lift: float
+    shift_end_fraction: float = 0.3
+    lift_start_fraction: float = 0.3
+    lift_end_fraction: float = 0.8
 
 
 DEFAULT_CANDIDATES = (
@@ -49,6 +52,46 @@ DEFAULT_CANDIDATES = (
     Candidate("shift_0_07", 4.0, 0.08, 0.07, 0.45),
     Candidate("lift_0_35", 4.0, 0.08, 0.06, 0.35),
     Candidate("lift_0_55", 4.0, 0.08, 0.06, 0.55),
+    Candidate(
+        "cycle_2_5_timing_0_20_0_90",
+        2.5,
+        0.08,
+        0.06,
+        0.45,
+        0.2,
+        0.2,
+        0.9,
+    ),
+    Candidate(
+        "cycle_2_5_timing_0_25_0_90",
+        2.5,
+        0.08,
+        0.06,
+        0.45,
+        0.25,
+        0.25,
+        0.9,
+    ),
+    Candidate(
+        "cycle_3_0_timing_0_20_0_90",
+        3.0,
+        0.08,
+        0.06,
+        0.45,
+        0.2,
+        0.2,
+        0.9,
+    ),
+    Candidate(
+        "cycle_4_0_timing_0_20_0_90",
+        4.0,
+        0.08,
+        0.06,
+        0.45,
+        0.2,
+        0.2,
+        0.9,
+    ),
 )
 
 
@@ -65,7 +108,9 @@ def _crawl_reference(time_s: float, candidate: Candidate) -> np.ndarray:
     active_leg = int(CRAWL_SEQUENCE[slot])
     previous_leg = int(CRAWL_SEQUENCE[(slot - 1) % 4])
 
-    shift_blend = _smoothstep(quarter_phase / 0.3)
+    shift_blend = _smoothstep(
+        quarter_phase / candidate.shift_end_fraction
+    )
     previous_pitch = (
         -CRAWL_FORE_AFT_SIGNS[previous_leg] * candidate.shift
     )
@@ -89,8 +134,19 @@ def _crawl_reference(time_s: float, candidate: Candidate) -> np.ndarray:
     )
     thigh = common_pitch + stride_pitch
 
-    lift_progress = np.clip((quarter_phase - 0.3) / 0.5, 0.0, 1.0)
-    lift_window = 0.3 <= quarter_phase < 0.8
+    lift_duration = (
+        candidate.lift_end_fraction - candidate.lift_start_fraction
+    )
+    lift_progress = np.clip(
+        (quarter_phase - candidate.lift_start_fraction) / lift_duration,
+        0.0,
+        1.0,
+    )
+    lift_window = (
+        candidate.lift_start_fraction
+        <= quarter_phase
+        < candidate.lift_end_fraction
+    )
     knee_lift = np.zeros(4)
     knee_lift[active_leg] = (
         candidate.lift
@@ -110,17 +166,26 @@ def _crawl_reference(time_s: float, candidate: Candidate) -> np.ndarray:
 
 def _parse_candidate(value: str) -> Candidate:
     fields = value.split(",")
-    if len(fields) != 5:
+    if len(fields) not in (5, 8):
         raise argparse.ArgumentTypeError(
-            "candidate must be NAME,CYCLE_TIME,STRIDE,SHIFT,LIFT"
+            "candidate must be NAME,CYCLE_TIME,STRIDE,SHIFT,LIFT or append "
+            "SHIFT_END,LIFT_START,LIFT_END"
         )
     try:
+        timing = (
+            (0.3, 0.3, 0.8)
+            if len(fields) == 5
+            else tuple(float(value) for value in fields[5:8])
+        )
         candidate = Candidate(
             name=fields[0],
             cycle_time=float(fields[1]),
             stride=float(fields[2]),
             shift=float(fields[3]),
             lift=float(fields[4]),
+            shift_end_fraction=timing[0],
+            lift_start_fraction=timing[1],
+            lift_end_fraction=timing[2],
         )
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
@@ -130,10 +195,18 @@ def _parse_candidate(value: str) -> Candidate:
         or candidate.stride < 0.0
         or candidate.shift <= 0.0
         or candidate.lift <= 0.0
+        or not (
+            0.0
+            < candidate.shift_end_fraction
+            <= candidate.lift_start_fraction
+            < candidate.lift_end_fraction
+            < 1.0
+        )
     ):
         raise argparse.ArgumentTypeError(
             "candidate name must be non-empty; cycle, shift, and lift must be "
-            "positive; stride must be non-negative"
+            "positive; stride must be non-negative; timing must satisfy "
+            "0 < shift end <= lift start < lift end < 1"
         )
     return candidate
 
@@ -330,6 +403,9 @@ def _verify_reference_parity(candidates: tuple[Candidate, ...]) -> None:
             crawl_stride=candidate.stride,
             crawl_shift=candidate.shift,
             crawl_lift=candidate.lift,
+            crawl_shift_end_fraction=candidate.shift_end_fraction,
+            crawl_lift_start_fraction=candidate.lift_start_fraction,
+            crawl_lift_end_fraction=candidate.lift_end_fraction,
             leg_kp=50.0,
         )
         for cycle_position in np.linspace(0.0, 0.999, 33):
@@ -359,7 +435,8 @@ def main() -> int:
         type=_parse_candidate,
         help=(
             "candidate as NAME,CYCLE_TIME,STRIDE,SHIFT,LIFT; repeat the flag "
-            "to replace the built-in one-factor sweep"
+            "to replace the built-in one-factor sweep; optionally append "
+            "SHIFT_END,LIFT_START,LIFT_END"
         ),
     )
     parser.add_argument("--num-cycles", type=int, default=8)

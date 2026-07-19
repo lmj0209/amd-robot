@@ -42,6 +42,9 @@ def main() -> int:
     parser.add_argument("--crawl-stride", type=float, default=0.08)
     parser.add_argument("--crawl-shift", type=float, default=0.06)
     parser.add_argument("--crawl-lift", type=float, default=0.45)
+    parser.add_argument("--crawl-shift-end-fraction", type=float, default=0.3)
+    parser.add_argument("--crawl-lift-start-fraction", type=float, default=0.3)
+    parser.add_argument("--crawl-lift-end-fraction", type=float, default=0.8)
     parser.add_argument("--crawl-min-air-time", type=float, default=0.07)
     parser.add_argument("--crawl-pose-reference", action="store_true")
     parser.add_argument("--command-x", type=float)
@@ -77,13 +80,21 @@ def main() -> int:
         or args.crawl_shift <= 0.0
         or args.crawl_lift <= 0.0
         or args.crawl_min_air_time <= 0.0
+        or not (
+            0.0
+            < args.crawl_shift_end_fraction
+            <= args.crawl_lift_start_fraction
+            < args.crawl_lift_end_fraction
+            < 1.0
+        )
     ):
         parser.error(
             "--num-envs, --num-steps, --action-scale, --leg-kp, and "
             "--gait-cycle-time must be positive when provided; trot reward "
             "scales must be non-negative and trot timing shape parameters "
             "must be positive; minimum air time and crawl stride must be "
-            "non-negative; crawl shift and lift must be positive"
+            "non-negative; crawl shift and lift must be positive; crawl "
+            "timing must satisfy 0 < shift end <= lift start < lift end < 1"
         )
     if args.gait_cycle_time is None and (
         args.trot_contact_scale > 0.0
@@ -118,6 +129,9 @@ def main() -> int:
         crawl_stride=args.crawl_stride,
         crawl_shift=args.crawl_shift,
         crawl_lift=args.crawl_lift,
+        crawl_shift_end_fraction=args.crawl_shift_end_fraction,
+        crawl_lift_start_fraction=args.crawl_lift_start_fraction,
+        crawl_lift_end_fraction=args.crawl_lift_end_fraction,
         crawl_min_air_time=args.crawl_min_air_time,
         crawl_pose_reference_enabled=args.crawl_pose_reference,
         command_override=(
@@ -318,6 +332,9 @@ def main() -> int:
         "crawl_stride": args.crawl_stride,
         "crawl_shift": args.crawl_shift,
         "crawl_lift": args.crawl_lift,
+        "crawl_shift_end_fraction": args.crawl_shift_end_fraction,
+        "crawl_lift_start_fraction": args.crawl_lift_start_fraction,
+        "crawl_lift_end_fraction": args.crawl_lift_end_fraction,
         "crawl_min_air_time": args.crawl_min_air_time,
         "crawl_pose_reference": args.crawl_pose_reference,
         "command_x_override": args.command_x,

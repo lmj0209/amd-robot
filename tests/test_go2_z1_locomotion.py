@@ -117,6 +117,13 @@ def test_trot_phase_alternates_diagonal_contact_targets() -> None:
             {"crawl_stride": -0.1},
             "crawl stride must be non-negative",
         ),
+        (
+            {
+                "crawl_shift_end_fraction": 0.4,
+                "crawl_lift_start_fraction": 0.3,
+            },
+            "crawl timing must satisfy",
+        ),
     ),
 )
 def test_trot_parameters_reject_invalid_combinations(
@@ -264,6 +271,15 @@ def test_crawl_schedule_uses_four_beat_sequence() -> None:
     ]
 
     assert active_legs == [0, 3, 1, 2]
+
+
+def test_crawl_schedule_timing_window_is_opt_in() -> None:
+    phase = jnp.asarray(2.0 * jnp.pi * 0.0625)
+    _, default_window = Go2Z1LocomotionEnv._crawl_schedule(phase)
+    _, wide_window = Go2Z1LocomotionEnv._crawl_schedule(phase, 0.2, 0.9)
+
+    assert not bool(default_window)
+    assert bool(wide_window)
 
 
 def test_crawl_reference_rejects_trot_reward_combination() -> None:

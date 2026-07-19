@@ -85,6 +85,9 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         crawl_stride: float = 0.08,
         crawl_shift: float = 0.06,
         crawl_lift: float = 0.45,
+        crawl_shift_end_fraction: float = 0.3,
+        crawl_lift_start_fraction: float = 0.3,
+        crawl_lift_end_fraction: float = 0.8,
         crawl_min_air_time: float = 0.07,
         crawl_pose_reference_enabled: bool = False,
         termination_cost_scale: float = 2.0,
@@ -123,6 +126,16 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             raise ValueError(
                 "crawl stride must be non-negative; crawl shift and lift "
                 "and minimum air time must be positive"
+            )
+        if not (
+            0.0 < crawl_shift_end_fraction
+            <= crawl_lift_start_fraction
+            < crawl_lift_end_fraction
+            < 1.0
+        ):
+            raise ValueError(
+                "crawl timing must satisfy 0 < shift end <= lift start "
+                "< lift end < 1"
             )
         if gait_cycle_time is None and (
             trot_contact_scale > 0.0
@@ -164,6 +177,9 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         self._crawl_stride = float(crawl_stride)
         self._crawl_shift = float(crawl_shift)
         self._crawl_lift = float(crawl_lift)
+        self._crawl_shift_end_fraction = float(crawl_shift_end_fraction)
+        self._crawl_lift_start_fraction = float(crawl_lift_start_fraction)
+        self._crawl_lift_end_fraction = float(crawl_lift_end_fraction)
         self._crawl_min_air_time = float(crawl_min_air_time)
         self._crawl_pose_reference_enabled = bool(crawl_pose_reference_enabled)
         self._reward_names = self._BASE_REWARD_NAMES
@@ -321,7 +337,11 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         if gait_phase is not None:
             info["gait_phase"] = gait_phase
         if crawl_reference is not None:
-            active_leg, swing_window = self._crawl_schedule(gait_phase)
+            active_leg, swing_window = self._crawl_schedule(
+                gait_phase,
+                self._crawl_lift_start_fraction,
+                self._crawl_lift_end_fraction,
+            )
             info.update(
                 {
                     "crawl_reference": crawl_reference,
@@ -497,7 +517,9 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             info["gait_phase"] = next_gait_phase
         if crawl_reference is not None:
             active_leg, swing_window = self._crawl_schedule(
-                state.info["gait_phase"]
+                state.info["gait_phase"],
+                self._crawl_lift_start_fraction,
+                self._crawl_lift_end_fraction,
             )
             info.update(
                 {
@@ -722,13 +744,19 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         return value * value * (3.0 - 2.0 * value)
 
     @staticmethod
-    def _crawl_schedule(gait_phase: jax.Array) -> tuple[jax.Array, jax.Array]:
+    def _crawl_schedule(
+        gait_phase: jax.Array,
+        lift_start_fraction: float = 0.3,
+        lift_end_fraction: float = 0.8,
+    ) -> tuple[jax.Array, jax.Array]:
         cycle_position = jnp.mod(gait_phase, 2.0 * jnp.pi) / (2.0 * jnp.pi)
         quarter_position = 4.0 * cycle_position
         slot = jnp.floor(quarter_position).astype(jnp.int32)
         quarter_phase = quarter_position - jnp.floor(quarter_position)
         active_leg = _CRAWL_SEQUENCE[slot]
-        swing_window = (quarter_phase >= 0.3) & (quarter_phase < 0.8)
+        swing_window = (quarter_phase >= lift_start_fraction) & (
+            quarter_phase < lift_end_fraction
+        )
         return active_leg, swing_window
 
     def _crawl_joint_reference(
@@ -745,7 +773,9 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         active_leg = _CRAWL_SEQUENCE[slot]
         previous_leg = _CRAWL_SEQUENCE[jnp.mod(slot - 1, 4)]
 
-        shift_blend = self._smoothstep(quarter_phase / 0.3)
+        shift_blend = self._smoothstep(
+            quarter_phase / self._crawl_shift_end_fraction
+        )
         previous_pitch = -_CRAWL_FORE_AFT_SIGNS[previous_leg] * self._crawl_shift
         active_pitch = -_CRAWL_FORE_AFT_SIGNS[active_leg] * self._crawl_shift
         previous_hip = _CRAWL_LEFT_RIGHT_SIGNS[previous_leg] * self._crawl_shift
@@ -765,8 +795,17 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         )
         thigh = common_pitch + stride_pitch
 
-        lift_progress = jnp.clip((quarter_phase - 0.3) / 0.5, 0.0, 1.0)
-        lift_window = (quarter_phase >= 0.3) & (quarter_phase < 0.8)
+        lift_duration = (
+            self._crawl_lift_end_fraction - self._crawl_lift_start_fraction
+        )
+        lift_progress = jnp.clip(
+            (quarter_phase - self._crawl_lift_start_fraction) / lift_duration,
+            0.0,
+            1.0,
+        )
+        lift_window = (
+            quarter_phase >= self._crawl_lift_start_fraction
+        ) & (quarter_phase < self._crawl_lift_end_fraction)
         knee_lift = (
             self._crawl_lift
             * jnp.square(jnp.sin(jnp.pi * lift_progress))
