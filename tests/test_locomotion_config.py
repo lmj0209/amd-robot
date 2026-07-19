@@ -476,3 +476,47 @@ def test_low_lr_extension_changes_only_additional_budget() -> None:
             qualification_values.pop(key)
             extension_values.pop(key)
         assert extension_values == qualification_values
+
+
+def test_trot_qualification_adds_only_phase_and_trot_rewards() -> None:
+    baseline = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_low_lr_qualification.yaml"
+        ).read_text()
+    )
+    trot = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_trot_qualification.yaml"
+        ).read_text()
+    )
+
+    assert trot["environment"]["gait_cycle_time"] == 0.5
+    assert trot["reward"]["trot_contact_scale"] == 0.5
+    assert trot["reward"]["trot_swing_height_cost_scale"] == 0.2
+    for section in (
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert trot[section] == baseline[section]
+
+    baseline_environment = dict(baseline["environment"])
+    trot_environment = dict(trot["environment"])
+    trot_environment.pop("gait_cycle_time")
+    assert trot_environment == baseline_environment
+
+    baseline_reward = dict(baseline["reward"])
+    trot_reward = dict(trot["reward"])
+    for key in (
+        "profile",
+        "trot_contact_scale",
+        "trot_swing_height_cost_scale",
+    ):
+        trot_reward.pop(key)
+    baseline_reward.pop("profile")
+    assert trot_reward == baseline_reward

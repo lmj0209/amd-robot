@@ -31,6 +31,9 @@ def main() -> int:
     parser.add_argument("--action-seed", type=int, default=9)
     parser.add_argument("--action-scale", type=float, default=0.25)
     parser.add_argument("--leg-kp", type=float)
+    parser.add_argument("--gait-cycle-time", type=float)
+    parser.add_argument("--trot-contact-scale", type=float, default=0.0)
+    parser.add_argument("--trot-swing-height-cost-scale", type=float, default=0.0)
     parser.add_argument(
         "--zero-actions",
         action="store_true",
@@ -52,17 +55,29 @@ def main() -> int:
         or args.num_steps <= 0
         or args.action_scale <= 0.0
         or (args.leg_kp is not None and args.leg_kp <= 0.0)
+        or (args.gait_cycle_time is not None and args.gait_cycle_time <= 0.0)
+        or args.trot_contact_scale < 0.0
+        or args.trot_swing_height_cost_scale < 0.0
     ):
         parser.error(
-            "--num-envs, --num-steps, --action-scale, and --leg-kp "
-            "must be positive"
+            "--num-envs, --num-steps, --action-scale, --leg-kp, and "
+            "--gait-cycle-time must be positive when provided; trot reward "
+            "scales must be non-negative"
         )
+    if args.gait_cycle_time is None and (
+        args.trot_contact_scale > 0.0
+        or args.trot_swing_height_cost_scale > 0.0
+    ):
+        parser.error("trot reward scales require --gait-cycle-time")
     if args.zero_actions and args.resample_actions:
         parser.error("--zero-actions and --resample-actions are mutually exclusive")
 
     env = Go2Z1LocomotionEnv(
         action_scale=args.action_scale,
         leg_kp=args.leg_kp,
+        gait_cycle_time=args.gait_cycle_time,
+        trot_contact_scale=args.trot_contact_scale,
+        trot_swing_height_cost_scale=args.trot_swing_height_cost_scale,
     )
     rollout_env = env
     if args.training_wrapper:
@@ -185,7 +200,7 @@ def main() -> int:
     }
     print(f"LOCOMOTION_PREFLIGHT {json.dumps(report, sort_keys=True)}", flush=True)
     return int(
-        report["observation_size"] != 73
+        report["observation_size"] != env.observation_size
         or report["action_size"] != 19
         or report["physics_substeps"] > 5
         or nonfinite_rewards > 0

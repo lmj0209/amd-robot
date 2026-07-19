@@ -25,7 +25,7 @@ FOOT_SITE_NAMES = ("FL_foot", "FR_foot", "RL_foot", "RR_foot")
 class Go2Z1LocomotionEnv(Go2Z1Env):
     """Track a low-speed planar command while keeping the Z1 arm tucked."""
 
-    _REWARD_NAMES = (
+    _BASE_REWARD_NAMES = (
         "tracking_linear_velocity",
         "tracking_angular_velocity",
         "pose",
@@ -70,6 +70,9 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         feet_height_cost_scale: float = 0.2,
         feet_air_time_scale: float = 0.1,
         max_foot_height: float = 0.1,
+        gait_cycle_time: float | None = None,
+        trot_contact_scale: float = 0.0,
+        trot_swing_height_cost_scale: float = 0.0,
         termination_cost_scale: float = 2.0,
         illegal_contact_cost_scale: float = 2.0,
         workspace_limit: float = 5.0,
@@ -85,6 +88,14 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             raise ValueError("tracking_sigma and max_foot_height must be positive")
         if not 0.0 <= moving_pose_multiplier <= 1.0:
             raise ValueError("moving_pose_multiplier must be in [0, 1]")
+        if gait_cycle_time is not None and gait_cycle_time <= 0.0:
+            raise ValueError("gait_cycle_time must be positive when enabled")
+        if trot_contact_scale < 0.0 or trot_swing_height_cost_scale < 0.0:
+            raise ValueError("trot reward scales must be non-negative")
+        if gait_cycle_time is None and (
+            trot_contact_scale > 0.0 or trot_swing_height_cost_scale > 0.0
+        ):
+            raise ValueError("trot reward scales require gait_cycle_time")
         if workspace_limit <= 0.0:
             raise ValueError("workspace_limit must be positive")
 
@@ -98,6 +109,12 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         self._randomize_reset = bool(randomize_reset)
         self._tracking_sigma = float(tracking_sigma)
         self._moving_pose_multiplier = float(moving_pose_multiplier)
+        self._gait_cycle_time = (
+            None if gait_cycle_time is None else float(gait_cycle_time)
+        )
+        self._reward_names = self._BASE_REWARD_NAMES
+        if self._gait_cycle_time is not None:
+            self._reward_names += ("trot_contact", "trot_swing_height")
         self._reward_scales = {
             "tracking_linear_velocity": float(tracking_linear_velocity_scale),
             "tracking_angular_velocity": float(tracking_angular_velocity_scale),
@@ -117,6 +134,13 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             "termination": -float(termination_cost_scale),
             "illegal_contact": -float(illegal_contact_cost_scale),
         }
+        if self._gait_cycle_time is not None:
+            self._reward_scales.update(
+                {
+                    "trot_contact": float(trot_contact_scale),
+                    "trot_swing_height": -float(trot_swing_height_cost_scale),
+                }
+            )
         self._max_foot_height = float(max_foot_height)
         self._workspace_limit = float(workspace_limit)
 
@@ -168,8 +192,30 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         start = int(self.mj_model.sensor_adr[sensor_id])
         return slice(start, start + int(self.mj_model.sensor_dim[sensor_id]))
 
+    @property
+    def observation_size(self) -> int:
+        return 73 + (2 if self._gait_cycle_time is not None else 0)
+
     def reset(self, rng: jax.Array):
-        rng, command_key, zero_key, joint_key, velocity_key = jax.random.split(rng, 5)
+        if self._gait_cycle_time is None:
+            rng, command_key, zero_key, joint_key, velocity_key = jax.random.split(
+                rng, 5
+            )
+            gait_phase = None
+        else:
+            (
+                rng,
+                command_key,
+                zero_key,
+                joint_key,
+                velocity_key,
+                gait_key,
+            ) = jax.random.split(rng, 6)
+            gait_phase = jnp.where(
+                self._randomize_reset,
+                jax.random.uniform(gait_key, (), minval=0.0, maxval=2.0 * jnp.pi),
+                0.0,
+            )
         state = super().reset(rng)
         command = self._sample_command(command_key, zero_key)
 
@@ -203,6 +249,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             "last_contact": jnp.zeros(len(FOOT_SITE_NAMES), dtype=bool),
             "swing_peak": jnp.zeros(len(FOOT_SITE_NAMES)),
         }
+        if gait_phase is not None:
+            info["gait_phase"] = gait_phase
         metrics = {
             **state.metrics,
             "command_x": command[0],
@@ -213,11 +261,17 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             "nonfinite_state": jnp.zeros(()),
             "swing_peak": jnp.zeros(()),
         }
-        metrics.update({f"reward/{name}": jnp.zeros(()) for name in self._REWARD_NAMES})
+        metrics.update(
+            {f"reward/{name}": jnp.zeros(()) for name in self._reward_names}
+        )
         return state.replace(
             data=data,
             obs=self._observation(
-                data, state.info["last_action"], state.info["phase"], command
+                data,
+                state.info["last_action"],
+                state.info["phase"],
+                command,
+                gait_phase,
             ),
             metrics=metrics,
             info=info,
@@ -272,6 +326,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             first_contact,
             feet_air_time,
             swing_peak,
+            state.info.get("gait_phase"),
         )
         scaled_components = {
             name: jnp.nan_to_num(
@@ -280,7 +335,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                 posinf=0.0,
                 neginf=0.0,
             )
-            for name in self._REWARD_NAMES
+            for name in self._reward_names
         }
         reward = jnp.clip(
             jnp.nan_to_num(
@@ -291,6 +346,13 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         ) * self.dt
 
         local_linvel = self._local_linear_velocity(stepped.data)
+        next_gait_phase = None
+        if self._gait_cycle_time is not None:
+            next_gait_phase = jnp.mod(
+                state.info["gait_phase"]
+                + 2.0 * jnp.pi * self.dt / self._gait_cycle_time,
+                2.0 * jnp.pi,
+            )
         info = {
             **stepped.info,
             # Preserve the raw 19-D policy action for observation/reward. The
@@ -301,6 +363,8 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             "last_contact": foot_contact,
             "swing_peak": swing_peak * ~foot_contact,
         }
+        if next_gait_phase is not None:
+            info["gait_phase"] = next_gait_phase
         metrics = {
             **stepped.metrics,
             "command_x": info["command"][0],
@@ -322,6 +386,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                 info["last_action"],
                 info["phase"],
                 info["command"],
+                next_gait_phase,
             ),
             reward=reward,
             done=done,
@@ -335,6 +400,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         last_action,
         phase,
         command: jax.Array | None = None,
+        gait_phase: jax.Array | None = None,
     ) -> jax.Array:
         base = super()._observation(data, last_action, phase)
         if command is None:
@@ -342,18 +408,19 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         # Match the explicit scaling used by the official Playground Go1 task
         # instead of relying on a changing running-statistics transform. Field
         # layout is inherited from Go2Z1Env._observation.
-        scaled = jnp.concatenate(
-            [
-                base[0:3],  # projected gravity
-                base[3:6] * 2.0,  # local linear velocity
-                base[6:9] * 0.25,  # local angular velocity
-                base[9:28],  # joint position error
-                base[28:47] * 0.05,  # joint velocity
-                base[47:66],  # previous raw policy action
-                base[66:70],  # task phase
-                command,
-            ]
-        )
+        fields = [
+            base[0:3],  # projected gravity
+            base[3:6] * 2.0,  # local linear velocity
+            base[6:9] * 0.25,  # local angular velocity
+            base[9:28],  # joint position error
+            base[28:47] * 0.05,  # joint velocity
+            base[47:66],  # previous raw policy action
+            base[66:70],  # task phase
+            command,
+        ]
+        if gait_phase is not None:
+            fields.append(jnp.asarray([jnp.sin(gait_phase), jnp.cos(gait_phase)]))
+        scaled = jnp.concatenate(fields)
         return jnp.clip(scaled, -10.0, 10.0).astype(jnp.float32)
 
     def _local_linear_velocity(self, data) -> jax.Array:
@@ -399,6 +466,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
         first_contact,
         feet_air_time,
         swing_peak,
+        gait_phase,
     ) -> dict[str, jax.Array]:
         local_linvel = self._local_linear_velocity(data)
         local_angvel = self._local_angular_velocity(data)
@@ -421,7 +489,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             self._moving_pose_multiplier,
             1.0,
         )
-        return {
+        components = {
             "tracking_linear_velocity": jnp.exp(-linear_error / self._tracking_sigma),
             "tracking_angular_velocity": jnp.exp(-angular_error / self._tracking_sigma),
             "pose": pose * pose_multiplier,
@@ -447,3 +515,34 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
             "termination": done,
             "illegal_contact": illegal_contact.astype(jnp.float32),
         }
+        if gait_phase is not None:
+            desired_contact = self._desired_trot_contact(gait_phase)
+            desired_swing = ~desired_contact
+            phase_swing_height_error = foot_height / self._max_foot_height - 1.0
+            components.update(
+                {
+                    "trot_contact": (
+                        jnp.mean(foot_contact == desired_contact) * moving
+                    ),
+                    "trot_swing_height": (
+                        jnp.mean(
+                            jnp.square(phase_swing_height_error)
+                            * desired_swing.astype(jnp.float32)
+                        )
+                        * moving
+                    ),
+                }
+            )
+        return components
+
+    @staticmethod
+    def _desired_trot_contact(gait_phase: jax.Array) -> jax.Array:
+        diagonal_a_stance = jnp.cos(gait_phase) >= 0.0
+        return jnp.asarray(
+            [
+                diagonal_a_stance,
+                ~diagonal_a_stance,
+                ~diagonal_a_stance,
+                diagonal_a_stance,
+            ]
+        )

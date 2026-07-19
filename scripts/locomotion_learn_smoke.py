@@ -56,6 +56,7 @@ def _make_env(
         zero_command_probability=environment["zero_command_probability"],
         command_override=command_override,
         randomize_reset=randomize_reset,
+        gait_cycle_time=environment.get("gait_cycle_time"),
         tracking_sigma=reward["tracking_sigma"],
         tracking_linear_velocity_scale=reward["tracking_linear_velocity_scale"],
         tracking_angular_velocity_scale=reward["tracking_angular_velocity_scale"],
@@ -74,6 +75,10 @@ def _make_env(
         feet_height_cost_scale=reward["feet_height_cost_scale"],
         feet_air_time_scale=reward["feet_air_time_scale"],
         max_foot_height=reward["max_foot_height"],
+        trot_contact_scale=reward.get("trot_contact_scale", 0.0),
+        trot_swing_height_cost_scale=reward.get(
+            "trot_swing_height_cost_scale", 0.0
+        ),
         termination_cost_scale=reward["termination_cost_scale"],
         illegal_contact_cost_scale=reward["illegal_contact_cost_scale"],
         workspace_limit=environment["workspace_limit"],
@@ -470,7 +475,7 @@ def main() -> int:
         f"actual_timesteps={actual_timesteps} "
         f"host_calls={host_calls} training_scan={training_scan} "
         f"control_timestep={env.dt} physics_substeps={env.n_substeps} "
-        f"action_size={env.action_size} observation_size=73 "
+        f"action_size={env.action_size} observation_size={env.observation_size} "
         f"learning_rate={learning_rate} "
         f"learning_rate_schedule={learning_rate_schedule} "
         f"desired_kl={desired_kl} "

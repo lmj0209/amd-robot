@@ -60,6 +60,11 @@ and RGC system fingerprint.
   changes only the additional training budget and retains the full-session
   checkpoints plus KL, policy-standard-deviation, finite-state, and per-foot
   gait acceptance gates.
+- `locomotion_stage1_trot_qualification.yaml`: a fresh 524,288-step
+  qualification after the large-network low-rate extension still converged
+  to continuous four-foot contact. It retains the low-rate safety settings,
+  adds an observed 0.5-second gait phase, and alternates diagonal FL+RR and
+  FR+RL contact/swing targets. The frozen action interface remains 19-D.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.
