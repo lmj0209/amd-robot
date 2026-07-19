@@ -225,6 +225,7 @@ def _run_candidate(
     liftoff_count = np.zeros(4, dtype=np.int32)
     touchdown_count = np.zeros(4, dtype=np.int32)
     sustained_swing_count = np.zeros(4, dtype=np.int32)
+    sustained_swing_by_active_leg = np.zeros((4, 4), dtype=np.int32)
     contact_duty_total = np.zeros(4)
     support_count = 0
     illegal_contact_count = int(initial_illegal)
@@ -248,13 +249,20 @@ def _run_candidate(
             floor_geom_id=floor_geom_id,
             foot_geom_ids=foot_geom_ids,
         )
+        quarter_position = (
+            4.0 * step_index * control_timestep / candidate.cycle_time
+        )
+        quarter_phase = quarter_position - np.floor(quarter_position)
+        active_leg = CRAWL_SEQUENCE[int(np.floor(quarter_position)) % 4]
         liftoff_count += previous_contact & ~foot_contact
         touchdown_count += ~previous_contact & foot_contact
         contact_filter = foot_contact | previous_contact
         next_air_time = feet_air_time + control_timestep
-        sustained_swing_count += (
+        sustained_swing = (
             (next_air_time >= minimum_air_time) & contact_filter
         )
+        sustained_swing_count += sustained_swing
+        sustained_swing_by_active_leg[active_leg] += sustained_swing
         feet_air_time = next_air_time * ~foot_contact
         previous_contact = foot_contact
         contact_duty_total += foot_contact
@@ -271,11 +279,6 @@ def _run_candidate(
         max_foot_height = np.maximum(
             max_foot_height, data.site_xpos[foot_site_ids, 2]
         )
-        quarter_position = (
-            4.0 * step_index * control_timestep / candidate.cycle_time
-        )
-        quarter_phase = quarter_position - np.floor(quarter_position)
-        active_leg = CRAWL_SEQUENCE[int(np.floor(quarter_position)) % 4]
         if (
             candidate.shift_end_fraction
             <= quarter_phase
@@ -336,6 +339,9 @@ def _run_candidate(
         "liftoffs": liftoff_count.tolist(),
         "touchdowns": touchdown_count.tolist(),
         "sustained_swings": sustained_swing_count.tolist(),
+        "sustained_swing_by_active_leg": (
+            sustained_swing_by_active_leg.tolist()
+        ),
         "max_foot_height": max_foot_height.tolist(),
         "pre_lift_support_margin": pre_lift_support_margin.tolist(),
         "active_swing_contact_fraction": (
