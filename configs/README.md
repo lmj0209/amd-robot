@@ -50,6 +50,11 @@ and RGC system fingerprint.
   gate. It changes only the Brax learning-rate schedule from `NONE` to
   `ADAPTIVE_KL`, matching the stability mechanism used by the ATEC RSL-RL
   velocity baseline while preserving the ROCm host-loop contract.
+- `locomotion_stage1_low_lr_qualification.yaml`: a fresh 524,288-step
+  qualification that returns to the fixed-rate optimizer and changes only the
+  learning rate from `3e-5` to `1e-5`. It tests whether controlled exploration
+  can be retained after the fixed-rate extension collapsed and the adaptive
+  qualification produced unsafe, uncoordinated foot motion.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.

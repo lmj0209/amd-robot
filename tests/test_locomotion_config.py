@@ -401,3 +401,41 @@ def test_adaptive_kl_qualification_changes_only_lr_schedule() -> None:
             fixed_values.pop(key)
             adaptive_values.pop(key)
         assert adaptive_values == fixed_values
+
+
+def test_low_lr_qualification_changes_only_learning_rate() -> None:
+    fixed = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_network_qualification.yaml"
+        ).read_text()
+    )
+    low_lr = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_low_lr_qualification.yaml"
+        ).read_text()
+    )
+
+    assert fixed["ppo"]["learning_rate"] == 0.00003
+    assert low_lr["ppo"]["learning_rate"] == 0.00001
+    for section in (
+        "environment",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert low_lr[section] == fixed[section]
+
+    for section, changed_keys in (
+        ("reward", {"profile"}),
+        ("ppo", {"learning_rate"}),
+    ):
+        fixed_values = dict(fixed[section])
+        low_lr_values = dict(low_lr[section])
+        for key in changed_keys:
+            fixed_values.pop(key)
+            low_lr_values.pop(key)
+        assert low_lr_values == fixed_values
