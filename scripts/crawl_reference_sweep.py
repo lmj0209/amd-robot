@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -315,6 +316,40 @@ def _run_candidate(
     }
 
 
+def _verify_reference_parity(candidates: tuple[Candidate, ...]) -> None:
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+    import jax.numpy as jnp
+
+    from amd_robo.envs.go2_z1_locomotion import Go2Z1LocomotionEnv
+
+    max_error = 0.0
+    for candidate in candidates:
+        env = Go2Z1LocomotionEnv(
+            gait_cycle_time=candidate.cycle_time,
+            crawl_reference_enabled=True,
+            crawl_stride=candidate.stride,
+            crawl_shift=candidate.shift,
+            crawl_lift=candidate.lift,
+            leg_kp=50.0,
+        )
+        for cycle_position in np.linspace(0.0, 0.999, 33):
+            phase = 2.0 * np.pi * cycle_position
+            expected = np.asarray(
+                env._crawl_joint_reference(
+                    jnp.asarray(phase),
+                    jnp.asarray([0.04, 0.0, 0.0]),
+                )
+            )
+            actual = _crawl_reference(
+                cycle_position * candidate.cycle_time,
+                candidate,
+            )
+            max_error = max(max_error, float(np.max(np.abs(expected - actual))))
+    print(f"CRAWL_REFERENCE_PARITY_MAX_ERROR {max_error}", flush=True)
+    if max_error > 1.0e-6:
+        raise RuntimeError("native crawl reference does not match the MJX environment")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--xml", type=Path, default=DEFAULT_XML)
@@ -333,6 +368,7 @@ def main() -> int:
     parser.add_argument("--minimum-air-time", type=float, default=0.07)
     parser.add_argument("--max-tilt-gate-deg", type=float, default=12.0)
     parser.add_argument("--minimum-support-fraction", type=float, default=0.98)
+    parser.add_argument("--verify-reference-parity", action="store_true")
     args = parser.parse_args()
     if (
         args.num_cycles <= 0
@@ -348,6 +384,8 @@ def main() -> int:
         )
 
     candidates = tuple(args.candidate or DEFAULT_CANDIDATES)
+    if args.verify_reference_parity:
+        _verify_reference_parity(candidates)
     results = [
         _run_candidate(
             args.xml,
