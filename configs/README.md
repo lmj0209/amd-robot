@@ -97,6 +97,11 @@ and RGC system fingerprint.
   0.4 m/s evaluation command and suppressed the front-foot swings. It changes
   only the sampled command range from 0.2-0.6 to 0.02-0.06 m/s and the fixed
   evaluation command from 0.4 to 0.04 m/s (plus the run label).
+- `locomotion_stage1_crawl_tracking_qualification.yaml`: fresh low-speed
+  qualification after the broad 0.25 tracking kernel gave almost identical
+  reward at zero and 0.04 m/s. It changes only `tracking_sigma` to 0.0025
+  (plus the run label), so the low-speed policy receives a measurable forward
+  velocity gradient without changing its control authority.
 - `evidence/`: immutable input snapshots for measured runs. The July 18
   standing and locomotion runs retain the exact configurations identified by
   their logged SHA256 values.

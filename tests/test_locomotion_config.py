@@ -704,6 +704,40 @@ def test_crawl_low_speed_changes_only_command_curriculum() -> None:
     assert low_speed_reward == residual_reward
 
 
+def test_crawl_tracking_qualification_changes_only_tracking_sigma() -> None:
+    low_speed = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_low_speed_qualification.yaml"
+        ).read_text()
+    )
+    tracking = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "locomotion_stage1_crawl_tracking_qualification.yaml"
+        ).read_text()
+    )
+
+    for section in (
+        "environment",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert tracking[section] == low_speed[section]
+    assert tracking["reward"]["tracking_sigma"] == 0.0025
+
+    low_speed_reward = dict(low_speed["reward"])
+    tracking_reward = dict(tracking["reward"])
+    low_speed_reward["tracking_sigma"] = 0.0025
+    low_speed_reward.pop("profile")
+    tracking_reward.pop("profile")
+    assert tracking_reward == low_speed_reward
+
+
 def test_trot_dwell_qualification_adds_only_minimum_air_time() -> None:
     timing = yaml.safe_load(
         (
