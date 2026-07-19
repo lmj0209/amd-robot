@@ -115,17 +115,25 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
         contact_duty_total = jnp.zeros(len(FOOT_SITE_NAMES))
         liftoff_count = jnp.zeros(len(FOOT_SITE_NAMES), dtype=jnp.int32)
         touchdown_count = jnp.zeros(len(FOOT_SITE_NAMES), dtype=jnp.int32)
-        air_time_total = jnp.zeros(len(FOOT_SITE_NAMES))
         foot_height_total = jnp.zeros(len(FOOT_SITE_NAMES))
         foot_height_max = jnp.full((len(FOOT_SITE_NAMES),), -jnp.inf)
+        completed_swing_air_time_total = jnp.zeros(len(FOOT_SITE_NAMES))
+        completed_swing_peak_total = jnp.zeros(len(FOOT_SITE_NAMES))
+        completed_swing_peak_max = jnp.full(
+            (len(FOOT_SITE_NAMES),), -jnp.inf
+        )
         diagonal_pair_mismatch_total = jnp.zeros(())
         diagonal_group_opposition_total = jnp.zeros(())
         diagonal_two_contact_total = jnp.zeros(())
         adjacent_two_contact_total = jnp.zeros(())
+        lateral_two_contact_total = jnp.zeros(())
+        front_hind_two_contact_total = jnp.zeros(())
         all_four_contact_total = jnp.zeros(())
         zero_contact_total = jnp.zeros(())
-        previous_contact = state.info["last_contact"]
+        previous_contact = None
         for _ in range(n_steps):
+            prior_air_time = state.info["feet_air_time"]
+            prior_swing_peak = state.info["swing_peak"]
             actions = action_fn(state.obs)
             state = step_fn(state, actions)
             reward_total += jnp.mean(state.reward)
@@ -150,23 +158,44 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             )
             foot_contact = state.info["last_contact"]
             contact_duty_total += jnp.mean(foot_contact, axis=0)
-            liftoff_count += jnp.sum(
-                previous_contact & ~foot_contact, axis=0, dtype=jnp.int32
-            )
-            touchdown_count += jnp.sum(
-                ~previous_contact & foot_contact, axis=0, dtype=jnp.int32
-            )
-            air_time_total += jnp.mean(state.info["feet_air_time"], axis=0)
             foot_height = state.data.site_xpos[:, env._foot_site_ids, -1]
             foot_height_total += jnp.mean(foot_height, axis=0)
             foot_height_max = jnp.maximum(
                 foot_height_max, jnp.max(foot_height, axis=0)
             )
+            if previous_contact is not None:
+                liftoff = previous_contact & ~foot_contact
+                touchdown = ~previous_contact & foot_contact
+                liftoff_count += jnp.sum(
+                    liftoff, axis=0, dtype=jnp.int32
+                )
+                touchdown_count += jnp.sum(
+                    touchdown, axis=0, dtype=jnp.int32
+                )
+                completed_air_time = prior_air_time + env.dt
+                completed_swing_peak = jnp.maximum(
+                    prior_swing_peak, foot_height
+                )
+                completed_swing_air_time_total += jnp.sum(
+                    jnp.where(touchdown, completed_air_time, 0.0), axis=0
+                )
+                completed_swing_peak_total += jnp.sum(
+                    jnp.where(touchdown, completed_swing_peak, 0.0), axis=0
+                )
+                completed_swing_peak_max = jnp.maximum(
+                    completed_swing_peak_max,
+                    jnp.max(
+                        jnp.where(touchdown, completed_swing_peak, -jnp.inf),
+                        axis=0,
+                    ),
+                )
 
             fl, fr, rl, rr = (foot_contact[:, index] for index in range(4))
             contact_count = jnp.sum(foot_contact, axis=-1)
             diagonal_two = (contact_count == 2) & ((fl & rr) | (fr & rl))
             adjacent_two = (contact_count == 2) & ~diagonal_two
+            lateral_two = (contact_count == 2) & ((fl & rl) | (fr & rr))
+            front_hind_two = (contact_count == 2) & ((fl & fr) | (rl & rr))
             diagonal_pair_mismatch_total += jnp.mean(
                 (
                     jnp.logical_xor(fl, rr).astype(jnp.float32)
@@ -183,6 +212,8 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             )
             diagonal_two_contact_total += jnp.mean(diagonal_two)
             adjacent_two_contact_total += jnp.mean(adjacent_two)
+            lateral_two_contact_total += jnp.mean(lateral_two)
+            front_hind_two_contact_total += jnp.mean(front_hind_two)
             all_four_contact_total += jnp.mean(contact_count == 4)
             zero_contact_total += jnp.mean(contact_count == 0)
             previous_contact = foot_contact
@@ -206,6 +237,7 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             "done_count": int(done_count),
             "illegal_contact_count": int(illegal_contact_count),
             "nonfinite_state_count": int(nonfinite_state_count),
+            "gait_diagnostics_valid": int(done_count) == 0,
             "diagonal_pair_mismatch_fraction": float(
                 diagonal_pair_mismatch_total / n_steps
             ),
@@ -218,12 +250,19 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             "adjacent_two_contact_fraction": float(
                 adjacent_two_contact_total / n_steps
             ),
+            "lateral_two_contact_fraction": float(
+                lateral_two_contact_total / n_steps
+            ),
+            "front_hind_two_contact_fraction": float(
+                front_hind_two_contact_total / n_steps
+            ),
             "all_four_contact_fraction": float(
                 all_four_contact_total / n_steps
             ),
             "zero_contact_fraction": float(zero_contact_total / n_steps),
         }
         for index, foot_name in enumerate(FOOT_SITE_NAMES):
+            completed_swing_count = jnp.maximum(touchdown_count[index], 1)
             results[name].update(
                 {
                     f"{foot_name}_contact_duty": float(
@@ -235,8 +274,20 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
                     f"{foot_name}_touchdowns_per_env": float(
                         touchdown_count[index] / n_envs
                     ),
-                    f"{foot_name}_mean_air_time": float(
-                        air_time_total[index] / n_steps
+                    f"{foot_name}_completed_swing_mean_air_time": float(
+                        completed_swing_air_time_total[index]
+                        / completed_swing_count
+                    ),
+                    f"{foot_name}_completed_swing_mean_peak": float(
+                        completed_swing_peak_total[index]
+                        / completed_swing_count
+                    ),
+                    f"{foot_name}_completed_swing_max_peak": float(
+                        jnp.where(
+                            touchdown_count[index] > 0,
+                            completed_swing_peak_max[index],
+                            0.0,
+                        )
                     ),
                     f"{foot_name}_mean_height": float(
                         foot_height_total[index] / n_steps
