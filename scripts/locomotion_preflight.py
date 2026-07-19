@@ -281,7 +281,7 @@ def main() -> int:
         if has_crawl_ik_reachable:
             minimum_crawl_ik_reachable = jnp.minimum(
                 minimum_crawl_ik_reachable,
-                state.metrics["crawl_ik_reachable_fraction"],
+                jnp.min(state.metrics["crawl_ik_reachable_fraction"]),
             )
         foot_contact = state.info["last_contact"]
         if previous_contact is not None:
