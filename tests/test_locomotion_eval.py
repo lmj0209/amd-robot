@@ -1,6 +1,10 @@
 import jax.numpy as jnp
 
-from scripts.locomotion_learn_smoke import _support_contact_masks
+from amd_robo.contracts import TaskPhase
+from scripts.locomotion_learn_smoke import (
+    _push_failure_counts,
+    _support_contact_masks,
+)
 
 
 def test_support_contact_masks_cover_zero_through_four_contacts():
@@ -22,3 +26,25 @@ def test_support_contact_masks_cover_zero_through_four_contacts():
     assert three_or_more.tolist() == [False, False, False, True, True]
     assert all_four.tolist() == [False, False, False, False, True]
     assert zero.tolist() == [True, False, False, False, False]
+
+
+def test_push_failure_counts_use_the_furthest_phase_reached():
+    counts = _push_failure_counts(
+        jnp.asarray(
+            [
+                int(TaskPhase.APPROACH),
+                int(TaskPhase.ALIGN),
+                int(TaskPhase.PUSH),
+                int(TaskPhase.HOLD),
+                int(TaskPhase.HOLD),
+            ]
+        ),
+        jnp.asarray([False, False, False, False, True]),
+    )
+
+    assert counts == {
+        "push_failure_approach_count": 1,
+        "push_failure_align_count": 1,
+        "push_failure_push_count": 1,
+        "push_failure_hold_count": 1,
+    }

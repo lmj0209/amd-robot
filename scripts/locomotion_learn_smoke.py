@@ -18,6 +18,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 
+from amd_robo.contracts import TaskPhase  # noqa: E402
 from amd_robo.envs.go2_z1_locomotion import (  # noqa: E402
     FOOT_SITE_NAMES,
     Go2Z1LocomotionEnv,
@@ -53,6 +54,7 @@ def _make_env(
     env_class = (
         Go2Z1PushEnv if task == "push" else Go2Z1LocomotionEnv
     )
+    task_kwargs = config.get("push", {}) if task == "push" else {}
     return env_class(
         ctrl_dt=environment["control_timestep"],
         action_scale=environment.get("action_scale", 0.25),
@@ -124,6 +126,7 @@ def _make_env(
         termination_cost_scale=reward["termination_cost_scale"],
         illegal_contact_cost_scale=reward["illegal_contact_cost_scale"],
         workspace_limit=environment["workspace_limit"],
+        **task_kwargs,
     )
 
 
@@ -138,11 +141,34 @@ def _support_contact_masks(foot_contact):
     )
 
 
-def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
+def _push_failure_counts(max_phase, success) -> dict[str, int]:
+    """Classify one fixed-horizon Push episode per environment."""
+    failed = ~jnp.asarray(success, dtype=bool)
+    max_phase = jnp.asarray(max_phase, dtype=jnp.int32)
+    return {
+        f"push_failure_{phase.name.lower()}_count": int(
+            jnp.sum(failed & (max_phase == int(phase)))
+        )
+        for phase in TaskPhase
+    }
+
+
+def _sequential_eval(
+    env,
+    action_fns,
+    *,
+    n_envs: int,
+    n_steps: int,
+    seed: int,
+    full_reset: bool = False,
+):
     from mujoco_playground import wrapper
 
     wrapped = wrapper.wrap_for_brax_training(
-        env, episode_length=n_steps + 1, action_repeat=1
+        env,
+        episode_length=n_steps + 1,
+        action_repeat=1,
+        full_reset=full_reset,
     )
     reset_fn = jax.jit(wrapped.reset)
     step_fn = jax.jit(wrapped.step)
@@ -199,6 +225,28 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
         all_four_contact_total = jnp.zeros(())
         zero_contact_total = jnp.zeros(())
         previous_contact = None
+        push_eval = "task_phase" in state.metrics
+        if push_eval:
+            push_active = jnp.ones((n_envs,), dtype=bool)
+            push_success = jnp.zeros((n_envs,), dtype=bool)
+            push_terminal = jnp.zeros((n_envs,), dtype=bool)
+            push_max_phase = jnp.full(
+                (n_envs,), int(TaskPhase.APPROACH), dtype=jnp.int32
+            )
+            push_last_goal_distance = state.metrics["object_to_goal_distance"]
+            push_min_goal_distance = push_last_goal_distance
+            push_distance_total = jnp.zeros(())
+            push_active_steps = jnp.zeros(())
+            push_max_object_speed = jnp.zeros(())
+            push_min_object_height = jnp.full((), jnp.inf)
+            push_max_object_height = jnp.full((), -jnp.inf)
+            first_phase_steps = {
+                phase: jnp.full((n_envs,), -1, dtype=jnp.int32)
+                for phase in TaskPhase
+            }
+            first_phase_steps[TaskPhase.APPROACH] = jnp.zeros(
+                (n_envs,), dtype=jnp.int32
+            )
         for _ in range(n_steps):
             prior_air_time = state.info["feet_air_time"]
             prior_swing_peak = state.info["swing_peak"]
@@ -304,6 +352,56 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             all_four_contact_total += jnp.mean(all_four_contact)
             zero_contact_total += jnp.mean(zero_contact)
             previous_contact = foot_contact
+            if push_eval:
+                active = push_active
+                phase = state.metrics["task_phase"].astype(jnp.int32)
+                push_max_phase = jnp.where(
+                    active, jnp.maximum(push_max_phase, phase), push_max_phase
+                )
+                for task_phase in TaskPhase:
+                    reached_now = (
+                        active
+                        & (phase >= int(task_phase))
+                        & (first_phase_steps[task_phase] < 0)
+                    )
+                    first_phase_steps[task_phase] = jnp.where(
+                        reached_now,
+                        state.info["steps"].astype(jnp.int32),
+                        first_phase_steps[task_phase],
+                    )
+                goal_distance = state.metrics["object_to_goal_distance"]
+                object_speed = state.metrics["object_speed"]
+                object_height = state.metrics["object_height"]
+                push_last_goal_distance = jnp.where(
+                    active, goal_distance, push_last_goal_distance
+                )
+                push_min_goal_distance = jnp.where(
+                    active,
+                    jnp.minimum(push_min_goal_distance, goal_distance),
+                    push_min_goal_distance,
+                )
+                push_distance_total += jnp.sum(
+                    jnp.where(active, goal_distance, 0.0)
+                )
+                push_active_steps += jnp.sum(active)
+                push_max_object_speed = jnp.maximum(
+                    push_max_object_speed,
+                    jnp.max(jnp.where(active, object_speed, 0.0)),
+                )
+                push_min_object_height = jnp.minimum(
+                    push_min_object_height,
+                    jnp.min(jnp.where(active, object_height, jnp.inf)),
+                )
+                push_max_object_height = jnp.maximum(
+                    push_max_object_height,
+                    jnp.max(jnp.where(active, object_height, -jnp.inf)),
+                )
+                terminal_now = active & state.done.astype(bool)
+                push_success = push_success | (
+                    terminal_now & (state.metrics["success"] > 0.0)
+                )
+                push_terminal = push_terminal | terminal_now
+                push_active = active & ~terminal_now
         results[name] = {
             "mean_reward": float(reward_total / n_steps),
             "mean_forward_velocity": float(forward_velocity_total / n_steps),
@@ -352,6 +450,57 @@ def _sequential_eval(env, action_fns, *, n_envs: int, n_steps: int, seed: int):
             ),
             "zero_contact_fraction": float(zero_contact_total / n_steps),
         }
+        if push_eval:
+            push_failure_counts = _push_failure_counts(
+                push_max_phase, push_success
+            )
+            results[name].update(
+                {
+                    "push_episode_count": n_envs,
+                    "push_success_count": int(jnp.sum(push_success)),
+                    "push_success_rate": float(jnp.mean(push_success)),
+                    "push_terminal_count": int(jnp.sum(push_terminal)),
+                    "push_horizon_incomplete_count": int(jnp.sum(push_active)),
+                    "push_reached_align_count": int(
+                        jnp.sum(push_max_phase >= int(TaskPhase.ALIGN))
+                    ),
+                    "push_reached_push_count": int(
+                        jnp.sum(push_max_phase >= int(TaskPhase.PUSH))
+                    ),
+                    "push_reached_hold_count": int(
+                        jnp.sum(push_max_phase >= int(TaskPhase.HOLD))
+                    ),
+                    "push_mean_final_goal_distance": float(
+                        jnp.mean(push_last_goal_distance)
+                    ),
+                    "push_mean_min_goal_distance": float(
+                        jnp.mean(push_min_goal_distance)
+                    ),
+                    "push_mean_object_to_goal_distance": float(
+                        push_distance_total / jnp.maximum(push_active_steps, 1)
+                    ),
+                    "push_max_object_speed": float(push_max_object_speed),
+                    "push_min_object_height": float(push_min_object_height),
+                    "push_max_object_height": float(push_max_object_height),
+                    **push_failure_counts,
+                }
+            )
+            for task_phase in TaskPhase:
+                reached = first_phase_steps[task_phase] >= 0
+                results[name][
+                    f"push_first_{task_phase.name.lower()}_step_mean"
+                ] = float(
+                    jnp.where(
+                        jnp.any(reached),
+                        jnp.sum(
+                            jnp.where(
+                                reached, first_phase_steps[task_phase], 0
+                            )
+                        )
+                        / jnp.maximum(jnp.sum(reached), 1),
+                        -1.0,
+                    )
+                )
         if has_crawl_reference_error:
             results[name]["mean_crawl_reference_error_rms"] = float(
                 crawl_reference_error_total / n_steps
@@ -829,7 +978,10 @@ def main() -> int:
         progress_fn=progress,
         seed=config["seed"],
         restore_params=restore_params,
-        wrap_env_fn=wrapper.wrap_for_brax_training,
+        wrap_env_fn=functools.partial(
+            wrapper.wrap_for_brax_training,
+            full_reset=args.task == "push",
+        ),
         **training_state_kwargs,
     )
     print(f"{event_prefix}_DONE", flush=True)
@@ -861,6 +1013,7 @@ def main() -> int:
         n_envs=evaluation["num_envs"],
         n_steps=evaluation["num_steps"],
         seed=evaluation["seed"],
+        full_reset=args.task == "push",
     )
     for policy_name, policy_metrics in results.items():
         print(

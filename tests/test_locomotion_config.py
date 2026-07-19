@@ -41,6 +41,29 @@ def test_locomotion_config_is_rocm_safe_and_preserves_action_contract() -> None:
     assert config["manual_evaluation"]["fixed_command"] == [0.4, 0.0, 0.0]
 
 
+def test_push_near_field_qualification_spans_the_physical_oracle() -> None:
+    config = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_qualification.yaml"
+        ).read_text()
+    )
+
+    assert config["status"] == "push_stage2_near_field_qualification"
+    assert config["environment"]["randomized_reset"] is False
+    assert config["environment"]["action_scale"] == 0.1
+    assert config["push"]["goal_threshold"] == 0.08
+    assert config["push"]["success_hold_steps"] == 100
+    assert config["ppo"]["episode_length"] == 4608
+    assert config["ppo"]["num_timesteps"] == (
+        config["ppo"]["num_envs"] * config["ppo"]["episode_length"]
+    )
+    assert config["rocm_guardrails"]["max_training_steps_per_host_call"] == 1
+    assert config["manual_evaluation"]["num_steps"] >= 4200
+    assert config["checkpoint"]["scope"] == "full_training_session"
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 
