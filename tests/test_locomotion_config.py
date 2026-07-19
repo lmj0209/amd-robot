@@ -113,6 +113,47 @@ def test_push_position_x_qualification_changes_only_initial_object_x() -> None:
     assert randomized_reward == fixed_reward
 
 
+def test_push_position_x_1cm_qualification_halves_only_the_probe_range() -> None:
+    probe = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_qualification.yaml"
+        ).read_text()
+    )
+    qualification = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_qualification.yaml"
+        ).read_text()
+    )
+
+    assert qualification["status"] == "push_stage2_position_x_1cm_qualification"
+    assert qualification["push"]["object_position_x_offset_range"] == [-0.01, 0.01]
+    for section in (
+        "environment",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert qualification[section] == probe[section]
+
+    probe_push = dict(probe["push"])
+    qualification_push = dict(qualification["push"])
+    probe_push.pop("object_position_x_offset_range")
+    qualification_push.pop("object_position_x_offset_range")
+    assert qualification_push == probe_push
+
+    probe_reward = dict(probe["reward"])
+    qualification_reward = dict(qualification["reward"])
+    probe_reward.pop("profile")
+    qualification_reward.pop("profile")
+    assert qualification_reward == probe_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 

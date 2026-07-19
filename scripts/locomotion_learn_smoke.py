@@ -240,10 +240,12 @@ def _sequential_eval(
             push_max_object_speed = jnp.zeros(())
             push_min_object_height = jnp.full((), jnp.inf)
             push_max_object_height = jnp.full((), -jnp.inf)
-            push_initial_object_x_min = jnp.min(state.info["object_pos"][:, 0])
-            push_initial_object_x_max = jnp.max(state.info["object_pos"][:, 0])
-            push_initial_object_y_min = jnp.min(state.info["object_pos"][:, 1])
-            push_initial_object_y_max = jnp.max(state.info["object_pos"][:, 1])
+            push_initial_object_x = state.info["object_pos"][:, 0]
+            push_initial_object_y = state.info["object_pos"][:, 1]
+            push_initial_object_x_min = jnp.min(push_initial_object_x)
+            push_initial_object_x_max = jnp.max(push_initial_object_x)
+            push_initial_object_y_min = jnp.min(push_initial_object_y)
+            push_initial_object_y_max = jnp.max(push_initial_object_y)
             first_phase_steps = {
                 phase: jnp.full((n_envs,), -1, dtype=jnp.int32)
                 for phase in TaskPhase
@@ -506,6 +508,18 @@ def _sequential_eval(
                     ),
                     "push_initial_object_y_max": float(
                         push_initial_object_y_max
+                    ),
+                    "push_initial_object_x_by_env": tuple(
+                        float(value) for value in push_initial_object_x
+                    ),
+                    "push_success_by_env": tuple(
+                        int(value) for value in push_success
+                    ),
+                    "push_max_phase_by_env": tuple(
+                        int(value) for value in push_max_phase
+                    ),
+                    "push_final_goal_distance_by_env": tuple(
+                        float(value) for value in push_last_goal_distance
                     ),
                     **push_failure_counts,
                 }
