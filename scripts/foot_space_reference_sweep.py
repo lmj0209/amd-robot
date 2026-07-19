@@ -86,7 +86,7 @@ def _parse_candidate(value: str) -> Candidate:
         or candidate.cycle_time <= 0.0
         or candidate.step_length <= 0.0
         or candidate.foot_clearance <= 0.0
-        or candidate.body_shift_x < 0.0
+        or not np.isfinite(candidate.body_shift_x)
         or candidate.body_shift_y < 0.0
         or not (
             0.0
@@ -97,8 +97,9 @@ def _parse_candidate(value: str) -> Candidate:
         )
     ):
         raise argparse.ArgumentTypeError(
-            "candidate dimensions must be positive, shifts non-negative, and "
-            "timing must satisfy 0 < shift end <= lift start < lift end < 1"
+            "candidate dimensions must be positive, lateral shift non-negative, "
+            "fore-aft shift finite, and timing must satisfy "
+            "0 < shift end <= lift start < lift end < 1"
         )
     return candidate
 
@@ -160,6 +161,7 @@ def _run_candidate(
     num_cycles: int,
     control_timestep: float,
     leg_kp: float,
+    leg_kd: float,
     minimum_air_time: float,
     max_tilt_gate_deg: float,
     minimum_support_fraction: float,
@@ -167,6 +169,7 @@ def _run_candidate(
     model = mujoco.MjModel.from_xml_path(str(xml_path))
     model.actuator_gainprm[:12, 0] = leg_kp
     model.actuator_biasprm[:12, 1] = -leg_kp
+    model.actuator_biasprm[:12, 2] = -leg_kd
     substeps = round(control_timestep / model.opt.timestep)
     if not np.isclose(substeps * model.opt.timestep, control_timestep):
         raise ValueError("control timestep must be divisible by simulation timestep")
@@ -320,6 +323,8 @@ def _run_candidate(
         "num_steps": num_steps,
         "duration_s": duration_s,
         "physics_substeps": substeps,
+        "leg_kp": leg_kp,
+        "leg_kd": leg_kd,
         "ik_reachable": ik_reachable,
         "forward_displacement": displacement,
         "mean_forward_velocity": displacement / duration_s,
@@ -348,6 +353,7 @@ def main() -> int:
     parser.add_argument("--num-cycles", type=int, default=4)
     parser.add_argument("--control-timestep", type=float, default=0.01)
     parser.add_argument("--leg-kp", type=float, default=50.0)
+    parser.add_argument("--leg-kd", type=float, default=0.5)
     parser.add_argument("--minimum-air-time", type=float, default=0.07)
     parser.add_argument("--max-tilt-gate-deg", type=float, default=12.0)
     parser.add_argument("--minimum-support-fraction", type=float, default=0.98)
@@ -356,6 +362,7 @@ def main() -> int:
         args.num_cycles <= 0
         or args.control_timestep <= 0.0
         or args.leg_kp <= 0.0
+        or args.leg_kd < 0.0
         or args.minimum_air_time <= 0.0
         or args.max_tilt_gate_deg <= 0.0
         or not 0.0 <= args.minimum_support_fraction <= 1.0
@@ -370,6 +377,7 @@ def main() -> int:
             num_cycles=args.num_cycles,
             control_timestep=args.control_timestep,
             leg_kp=args.leg_kp,
+            leg_kd=args.leg_kd,
             minimum_air_time=args.minimum_air_time,
             max_tilt_gate_deg=args.max_tilt_gate_deg,
             minimum_support_fraction=args.minimum_support_fraction,
