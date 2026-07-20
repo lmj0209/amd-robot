@@ -244,6 +244,16 @@ def _sequential_eval(
             push_min_object_height = jnp.full((), jnp.inf)
             push_max_object_height = jnp.full((), -jnp.inf)
             push_max_object_speed_by_env = jnp.zeros((n_envs,))
+            push_peak_step_by_env = jnp.full(
+                (n_envs,), -1, dtype=jnp.int32
+            )
+            push_peak_prior_speed_by_env = jnp.zeros((n_envs,))
+            push_peak_prior_end_effector_distance_by_env = jnp.zeros(
+                (n_envs,)
+            )
+            push_peak_end_effector_distance_by_env = jnp.zeros((n_envs,))
+            push_peak_object_displacement_by_env = jnp.zeros((n_envs,))
+            push_peak_leg_action_rms_by_env = jnp.zeros((n_envs,))
             push_min_object_height_by_env = jnp.full((n_envs,), jnp.inf)
             push_max_object_height_by_env = jnp.full((n_envs,), -jnp.inf)
             push_initial_object_x = state.info["object_pos"][:, 0]
@@ -262,6 +272,13 @@ def _sequential_eval(
         for _ in range(n_steps):
             prior_air_time = state.info["feet_air_time"]
             prior_swing_peak = state.info["swing_peak"]
+            if push_eval:
+                prior_object_speed = jnp.linalg.norm(
+                    state.info["object_qvel"][:, :2], axis=-1
+                )
+                prior_end_effector_distance = state.metrics[
+                    "end_effector_to_push_distance"
+                ]
             actions = action_fn(state.obs)
             state = step_fn(state, actions)
             reward_total += jnp.mean(state.reward)
@@ -415,6 +432,39 @@ def _sequential_eval(
                     push_max_object_height,
                     jnp.max(jnp.where(active, object_height, -jnp.inf)),
                 )
+                new_speed_peak = active & (
+                    object_speed > push_max_object_speed_by_env
+                )
+                push_peak_step_by_env = jnp.where(
+                    new_speed_peak,
+                    state.info["steps"].astype(jnp.int32),
+                    push_peak_step_by_env,
+                )
+                push_peak_prior_speed_by_env = jnp.where(
+                    new_speed_peak,
+                    prior_object_speed,
+                    push_peak_prior_speed_by_env,
+                )
+                push_peak_prior_end_effector_distance_by_env = jnp.where(
+                    new_speed_peak,
+                    prior_end_effector_distance,
+                    push_peak_prior_end_effector_distance_by_env,
+                )
+                push_peak_end_effector_distance_by_env = jnp.where(
+                    new_speed_peak,
+                    state.metrics["end_effector_to_push_distance"],
+                    push_peak_end_effector_distance_by_env,
+                )
+                push_peak_object_displacement_by_env = jnp.where(
+                    new_speed_peak,
+                    state.metrics["object_displacement"],
+                    push_peak_object_displacement_by_env,
+                )
+                push_peak_leg_action_rms_by_env = jnp.where(
+                    new_speed_peak,
+                    jnp.sqrt(jnp.mean(actions[:, :12] ** 2, axis=-1)),
+                    push_peak_leg_action_rms_by_env,
+                )
                 push_max_object_speed_by_env = jnp.where(
                     active,
                     jnp.maximum(push_max_object_speed_by_env, object_speed),
@@ -552,6 +602,31 @@ def _sequential_eval(
                     ),
                     "push_max_object_speed_by_env": tuple(
                         float(value) for value in push_max_object_speed_by_env
+                    ),
+                    "push_peak_step_by_env": tuple(
+                        int(value) for value in push_peak_step_by_env
+                    ),
+                    "push_peak_prior_speed_by_env": tuple(
+                        float(value)
+                        for value in push_peak_prior_speed_by_env
+                    ),
+                    "push_peak_prior_end_effector_distance_by_env": tuple(
+                        float(value)
+                        for value in (
+                            push_peak_prior_end_effector_distance_by_env
+                        )
+                    ),
+                    "push_peak_end_effector_distance_by_env": tuple(
+                        float(value)
+                        for value in push_peak_end_effector_distance_by_env
+                    ),
+                    "push_peak_object_displacement_by_env": tuple(
+                        float(value)
+                        for value in push_peak_object_displacement_by_env
+                    ),
+                    "push_peak_leg_action_rms_by_env": tuple(
+                        float(value)
+                        for value in push_peak_leg_action_rms_by_env
                     ),
                     "push_min_object_height_by_env": tuple(
                         float(value) for value in push_min_object_height_by_env
