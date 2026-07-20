@@ -911,6 +911,39 @@ def test_push_hold_entry_decay_changes_only_command_transition() -> None:
     assert decay_push == base_push
 
 
+def test_push_near_field_solver16_changes_only_solver_iterations() -> None:
+    base = yaml.safe_load(
+        (
+            REPO_ROOT / "configs" / "push_stage2_near_field_qualification.yaml"
+        ).read_text()
+    )
+    solver16 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_solver16_qualification.yaml"
+        ).read_text()
+    )
+
+    assert solver16["status"] == "push_stage2_near_field_solver16_qualification"
+    assert solver16["push"]["solver_iterations"] == 16
+    for section in (
+        "environment",
+        "curriculum",
+        "reward",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert solver16[section] == base[section]
+
+    base_push = dict(base["push"])
+    solver16_push = dict(solver16["push"])
+    solver16_push.pop("solver_iterations")
+    assert solver16_push == base_push
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 
