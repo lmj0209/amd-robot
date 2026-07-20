@@ -34,6 +34,13 @@ This change:
 Validated with Python 3.12.3, JAX/JAXLIB 0.10.2, Brax 0.14.2 runtime
 dependencies, and the current upstream files.
 
+The stored patch uses zero-context hunks to keep patch metadata free of
+whitespace-only context lines:
+
+```bash
+git apply --unidiff-zero patches/brax-main-pmap-axis.patch
+```
+
 ```text
 JAX_PLATFORMS=cpu python -m brax.training.pmap_test
 Ran 1 test in 0.141s
