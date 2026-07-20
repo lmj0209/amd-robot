@@ -9,6 +9,7 @@ import hashlib
 import inspect
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
+import numpy as np  # noqa: E402
 
 from amd_robo.contracts import TaskPhase  # noqa: E402
 from amd_robo.envs.go2_z1_locomotion import (  # noqa: E402
@@ -24,6 +26,11 @@ from amd_robo.envs.go2_z1_locomotion import (  # noqa: E402
     Go2Z1LocomotionEnv,
 )
 from amd_robo.envs.go2_z1_push import Go2Z1PushEnv  # noqa: E402
+from amd_robo.evaluation.determinism import (  # noqa: E402
+    first_trace_divergence,
+    sha256_path,
+    trace_summary,
+)
 from amd_robo.training.host_loop import plan_brax_host_loop  # noqa: E402
 from amd_robo.training.learner_checkpoint import (  # noqa: E402
     load_training_session_checkpoint,
@@ -155,6 +162,421 @@ def _push_failure_counts(max_phase, success) -> dict[str, int]:
         )
         for phase in TaskPhase
     }
+
+
+def _audit_fields(state, actions) -> dict[str, jax.Array]:
+    """Selects state needed to locate the first meaningful rollout split."""
+
+    return {
+        "action": actions,
+        "command": state.info["command"],
+        "ctrl": state.data.ctrl,
+        "done": state.done,
+        "end_effector_distance": state.metrics[
+            "end_effector_to_push_distance"
+        ],
+        "object_displacement": state.metrics["object_displacement"],
+        "object_goal_distance": state.metrics["object_to_goal_distance"],
+        "object_qpos": state.info["object_qpos"],
+        "object_qvel": state.info["object_qvel"],
+        "obs": state.obs,
+        "phase": state.info["phase"],
+        "qacc": state.data.qacc,
+        "qpos": state.data.qpos,
+        "qvel": state.data.qvel,
+        "reward": state.reward,
+        "sensordata": state.data.sensordata,
+        "steps": state.info["steps"],
+        "success": state.metrics["success"],
+    }
+
+
+def _initial_audit_fields(state, keys) -> dict[str, np.ndarray]:
+    fields = {
+        "command": state.info["command"],
+        "env_rng": state.info["rng"],
+        "input_key": keys,
+        "object_qpos": state.info["object_qpos"],
+        "object_qvel": state.info["object_qvel"],
+        "obs": state.obs,
+        "phase": state.info["phase"],
+        "qpos": state.data.qpos,
+        "qvel": state.data.qvel,
+    }
+    return {
+        name: np.asarray(jax.device_get(value))[None, ...]
+        for name, value in fields.items()
+    }
+
+
+def _policy_audit_sequence(action_fns, repeats: int):
+    if repeats < 2:
+        raise ValueError("determinism audit requires at least two repeats")
+    counters = {"baseline": 0, "trained": 0}
+    sequence = []
+    for repeat in range(repeats):
+        order = (
+            ("trained", "baseline")
+            if repeat % 2 == 0
+            else ("baseline", "trained")
+        )
+        for policy_name in order:
+            run_index = counters[policy_name]
+            counters[policy_name] += 1
+            sequence.append(
+                (
+                    f"{policy_name}_{run_index}",
+                    policy_name,
+                    action_fns[policy_name],
+                )
+            )
+    return sequence
+
+
+def _discrete_push_outcome(run: dict[str, object]) -> dict[str, object]:
+    return {
+        name: run[name]
+        for name in (
+            "success_by_env",
+            "terminal_by_env",
+            "abnormal_by_env",
+            "max_phase_by_env",
+        )
+    }
+
+
+def _comparison_report(
+    reference: dict[str, np.ndarray],
+    candidate: dict[str, np.ndarray],
+    sampled_control_steps: list[int],
+) -> dict[str, object]:
+    exact = first_trace_divergence(reference, candidate)
+    tolerant = first_trace_divergence(
+        reference,
+        candidate,
+        absolute_tolerance=1e-6,
+        relative_tolerance=1e-6,
+    )
+
+    def serialize(divergence):
+        if divergence is None:
+            return None
+        report = divergence.to_dict()
+        report["sampled_control_step"] = sampled_control_steps[
+            divergence.step_index
+        ]
+        return report
+
+    return {
+        "exact_match": exact is None,
+        "match_at_1e-6": tolerant is None,
+        "first_exact_divergence": serialize(exact),
+        "first_1e-6_divergence": serialize(tolerant),
+    }
+
+
+def _load_npz_trace(path: Path) -> dict[str, np.ndarray]:
+    with np.load(path, allow_pickle=False) as archive:
+        return {name: archive[name] for name in archive.files}
+
+
+def _git_head() -> str:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+def _push_determinism_audit(
+    env,
+    action_fns,
+    *,
+    output_dir: str | Path,
+    reference_dir: str | Path | None,
+    config_path: str,
+    config_sha256: str,
+    params_path: str,
+    n_envs: int,
+    n_steps: int,
+    seed: int,
+    repeats: int,
+    trace_stride: int,
+) -> dict[str, object]:
+    """Runs interleaved policies from one immutable reset and saves traces."""
+
+    from mujoco_playground import wrapper
+
+    if trace_stride <= 0:
+        raise ValueError("determinism trace stride must be positive")
+    destination = Path(output_dir)
+    if destination.exists():
+        raise FileExistsError(f"refusing to overwrite audit output: {destination}")
+    destination.mkdir(parents=True)
+
+    wrapped = wrapper.wrap_for_brax_training(
+        env,
+        episode_length=n_steps + 1,
+        action_repeat=1,
+        full_reset=True,
+    )
+    reset_fn = jax.jit(wrapped.reset)
+    step_fn = jax.jit(wrapped.step)
+    keys = jax.random.split(jax.random.PRNGKey(seed), n_envs)
+    initial_state = reset_fn(keys)
+    initial_fields = _initial_audit_fields(initial_state, keys)
+    initial_summary = trace_summary(initial_fields)
+    initial_trace_file = "initial_state.npz"
+    np.savez_compressed(destination / initial_trace_file, **initial_fields)
+    sampled_control_steps = list(range(1, n_steps + 1, trace_stride))
+    if sampled_control_steps[-1] != n_steps:
+        sampled_control_steps.append(n_steps)
+
+    commit = _git_head()
+    params_sha256 = sha256_path(params_path)
+    external_manifest = None
+    external_initial_comparison = None
+    external_traces = {}
+    external_outcomes = {}
+    if reference_dir is not None:
+        reference_root = Path(reference_dir)
+        external_manifest = json.loads(
+            (reference_root / "manifest.json").read_text()
+        )
+        expected_contract = {
+            "commit": commit,
+            "config_sha256": config_sha256,
+            "params_sha256": params_sha256,
+            "seed": seed,
+            "num_envs": n_envs,
+            "num_steps": n_steps,
+            "trace_stride": trace_stride,
+        }
+        actual_contract = {
+            name: external_manifest[name] for name in expected_contract
+        }
+        if actual_contract != expected_contract:
+            raise ValueError(
+                "external audit contract differs: "
+                f"expected={expected_contract} actual={actual_contract}"
+            )
+        external_initial_trace = _load_npz_trace(
+            reference_root / external_manifest["initial_state_trace_file"]
+        )
+        external_initial_comparison = _comparison_report(
+            external_initial_trace,
+            initial_fields,
+            [0],
+        )
+        for policy_name, reference_name in external_manifest[
+            "policy_references"
+        ].items():
+            run = next(
+                item
+                for item in external_manifest["runs"]
+                if item["name"] == reference_name
+            )
+            external_traces[policy_name] = _load_npz_trace(
+                reference_root / run["trace_file"]
+            )
+            external_outcomes[policy_name] = _discrete_push_outcome(run)
+
+    sequence = _policy_audit_sequence(action_fns, repeats)
+    policy_reference_traces = {}
+    policy_reference_outcomes = {}
+    policy_reference_names = {}
+    runs = []
+    for run_name, policy_name, action_fn in sequence:
+        state = initial_state
+        active = jnp.ones((n_envs,), dtype=bool)
+        success = jnp.zeros((n_envs,), dtype=bool)
+        terminal = jnp.zeros((n_envs,), dtype=bool)
+        max_phase = jnp.full(
+            (n_envs,), int(TaskPhase.APPROACH), dtype=jnp.int32
+        )
+        max_object_speed = jnp.zeros((n_envs,))
+        peak_step = jnp.full((n_envs,), -1, dtype=jnp.int32)
+        first_motion_step = jnp.full((n_envs,), -1, dtype=jnp.int32)
+        final_goal_distance = state.metrics["object_to_goal_distance"]
+        trace_lists = None
+
+        for control_step in range(1, n_steps + 1):
+            actions = action_fn(state.obs)
+            state = step_fn(state, actions)
+            current_active = active
+            phase = state.metrics["task_phase"].astype(jnp.int32)
+            max_phase = jnp.where(
+                current_active, jnp.maximum(max_phase, phase), max_phase
+            )
+            object_speed = jnp.linalg.norm(
+                state.info["object_qvel"][:, :2], axis=-1
+            )
+            speed_peak = current_active & (object_speed > max_object_speed)
+            peak_step = jnp.where(speed_peak, control_step, peak_step)
+            max_object_speed = jnp.where(
+                current_active,
+                jnp.maximum(max_object_speed, object_speed),
+                max_object_speed,
+            )
+            first_motion_step = jnp.where(
+                current_active
+                & (first_motion_step < 0)
+                & (state.metrics["object_displacement"] >= 1e-3),
+                control_step,
+                first_motion_step,
+            )
+            final_goal_distance = jnp.where(
+                current_active,
+                state.metrics["object_to_goal_distance"],
+                final_goal_distance,
+            )
+            terminal_now = current_active & state.done.astype(bool)
+            success = success | (
+                terminal_now & (state.metrics["success"] > 0.0)
+            )
+            terminal = terminal | terminal_now
+            active = current_active & ~terminal_now
+
+            if control_step % trace_stride == 1 % trace_stride or (
+                control_step == n_steps
+            ):
+                fields = _audit_fields(state, actions)
+                if trace_lists is None:
+                    trace_lists = {name: [] for name in fields}
+                for name, value in fields.items():
+                    trace_lists[name].append(value)
+
+        if trace_lists is None:
+            raise RuntimeError("determinism audit did not sample any trace fields")
+        trace = {
+            name: np.asarray(
+                jax.device_get(jnp.stack(values, axis=0))
+            )
+            for name, values in trace_lists.items()
+        }
+        if next(iter(trace.values())).shape[0] != len(sampled_control_steps):
+            raise RuntimeError("determinism audit sampled unexpected step count")
+        trace_file = f"{run_name}.npz"
+        np.savez_compressed(destination / trace_file, **trace)
+
+        run = {
+            "name": run_name,
+            "policy": policy_name,
+            "trace_file": trace_file,
+            "trace": trace_summary(trace),
+            "success_by_env": tuple(int(value) for value in success),
+            "terminal_by_env": tuple(int(value) for value in terminal),
+            "abnormal_by_env": tuple(
+                int(value) for value in (terminal & ~success)
+            ),
+            "horizon_incomplete_by_env": tuple(
+                int(value) for value in active
+            ),
+            "max_phase_by_env": tuple(int(value) for value in max_phase),
+            "max_object_speed_by_env": tuple(
+                float(value) for value in max_object_speed
+            ),
+            "peak_step_by_env": tuple(int(value) for value in peak_step),
+            "first_motion_step_by_env": tuple(
+                int(value) for value in first_motion_step
+            ),
+            "final_goal_distance_by_env": tuple(
+                float(value) for value in final_goal_distance
+            ),
+        }
+        if policy_name not in policy_reference_traces:
+            policy_reference_traces[policy_name] = trace
+            policy_reference_outcomes[policy_name] = _discrete_push_outcome(run)
+            policy_reference_names[policy_name] = run_name
+            run["in_process_comparison"] = None
+        else:
+            run["in_process_comparison"] = _comparison_report(
+                policy_reference_traces[policy_name],
+                trace,
+                sampled_control_steps,
+            )
+        if policy_name in external_traces:
+            run["external_comparison"] = _comparison_report(
+                external_traces[policy_name],
+                trace,
+                sampled_control_steps,
+            )
+            run["external_discrete_outcome_match"] = (
+                _discrete_push_outcome(run)
+                == external_outcomes[policy_name]
+            )
+        else:
+            run["external_comparison"] = None
+            run["external_discrete_outcome_match"] = None
+        runs.append(run)
+
+    in_process_outcome_match = all(
+        _discrete_push_outcome(run)
+        == policy_reference_outcomes[run["policy"]]
+        for run in runs
+    )
+    in_process_exact_match = all(
+        run["in_process_comparison"] is None
+        or run["in_process_comparison"]["exact_match"]
+        for run in runs
+    )
+    external_outcome_match = (
+        None
+        if external_manifest is None
+        else all(run["external_discrete_outcome_match"] for run in runs)
+    )
+    external_exact_match = (
+        None
+        if external_manifest is None
+        else all(run["external_comparison"]["exact_match"] for run in runs)
+    )
+    manifest = {
+        "schema_version": 1,
+        "kind": "push_determinism_audit",
+        "commit": commit,
+        "config_path": config_path,
+        "config_sha256": config_sha256,
+        "params_path": params_path,
+        "params_sha256": params_sha256,
+        "jax_version": jax.__version__,
+        "backend": jax.default_backend(),
+        "devices": [str(device) for device in jax.devices()],
+        "seed": seed,
+        "num_envs": n_envs,
+        "num_steps": n_steps,
+        "trace_stride": trace_stride,
+        "repeats_per_policy": repeats,
+        "sampled_control_steps": sampled_control_steps,
+        "initial_state": initial_summary,
+        "initial_state_trace_file": initial_trace_file,
+        "external_initial_state_comparison": external_initial_comparison,
+        "policy_references": policy_reference_names,
+        "runs": runs,
+        "in_process_discrete_outcome_match": in_process_outcome_match,
+        "in_process_exact_trace_match": in_process_exact_match,
+        "external_discrete_outcome_match": external_outcome_match,
+        "external_exact_trace_match": external_exact_match,
+        "gate_pass": (
+            in_process_outcome_match
+            and (
+                external_outcome_match
+                if external_outcome_match is not None
+                else True
+            )
+            and (
+                external_initial_comparison["exact_match"]
+                if external_initial_comparison is not None
+                else True
+            )
+        ),
+    }
+    manifest_tmp = destination / "manifest.json.tmp"
+    manifest_tmp.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    manifest_tmp.replace(destination / "manifest.json")
+    return manifest
 
 
 def _sequential_eval(
@@ -735,6 +1157,32 @@ def main() -> int:
     )
     parser.add_argument("--eval-num-envs", type=int)
     parser.add_argument("--eval-num-steps", type=int)
+    parser.add_argument(
+        "--determinism-audit-dir",
+        help=(
+            "Run an interleaved Push-policy determinism audit and write a "
+            "new manifest/trace directory."
+        ),
+    )
+    parser.add_argument(
+        "--determinism-reference-dir",
+        help=(
+            "Compare the new determinism audit against a compatible fresh-"
+            "process audit directory."
+        ),
+    )
+    parser.add_argument(
+        "--determinism-repeats",
+        type=int,
+        default=3,
+        help="Number of interleaved repeats for each Push policy.",
+    )
+    parser.add_argument(
+        "--determinism-trace-stride",
+        type=int,
+        default=1,
+        help="Record every Nth control step, always including the final step.",
+    )
     parser.add_argument("--training-state-dir")
     parser.add_argument("--resume-training-state")
     parser.add_argument("--checkpoint-interval-steps", type=int)
@@ -829,6 +1277,27 @@ def main() -> int:
         num_timesteps = 0
     if args.params_in and args.resume_training_state:
         parser.error("--params-in and --resume-training-state are mutually exclusive")
+    if args.determinism_reference_dir and not args.determinism_audit_dir:
+        parser.error(
+            "--determinism-reference-dir requires --determinism-audit-dir"
+        )
+    if args.determinism_audit_dir:
+        if args.task != "push":
+            parser.error("determinism audit is only available for --task push")
+        if not args.eval_only:
+            parser.error("determinism audit requires --eval-only")
+        if args.skip_eval:
+            parser.error("determinism audit cannot be combined with --skip-eval")
+        if args.eval_policy != "both":
+            parser.error("determinism audit requires --eval-policy both")
+        if not args.params_in:
+            parser.error(
+                "determinism audit requires frozen inference --params-in"
+            )
+        if args.determinism_repeats < 2:
+            parser.error("--determinism-repeats must be at least 2")
+        if args.determinism_trace_stride <= 0:
+            parser.error("--determinism-trace-stride must be positive")
     if (
         args.migrate_missing_nonfinite_state
         or args.migrate_missing_arm_action_magnitude
@@ -1190,6 +1659,68 @@ def main() -> int:
         randomize_reset=False,
         task=args.task,
     )
+    if args.determinism_audit_dir:
+        print(
+            "PUSH_DETERMINISM_AUDIT_START "
+            f"num_envs={eval_num_envs} num_steps={eval_num_steps} "
+            f"seed={evaluation['seed']} repeats={args.determinism_repeats} "
+            f"trace_stride={args.determinism_trace_stride}",
+            flush=True,
+        )
+        manifest = _push_determinism_audit(
+            eval_env,
+            action_fns,
+            output_dir=args.determinism_audit_dir,
+            reference_dir=args.determinism_reference_dir,
+            config_path=args.config,
+            config_sha256=config_sha256,
+            params_path=args.params_in,
+            n_envs=eval_num_envs,
+            n_steps=eval_num_steps,
+            seed=evaluation["seed"],
+            repeats=args.determinism_repeats,
+            trace_stride=args.determinism_trace_stride,
+        )
+        for run in manifest["runs"]:
+            comparison = run["in_process_comparison"]
+            print(
+                "PUSH_DETERMINISM_RUN "
+                f"name={run['name']} policy={run['policy']} "
+                f"trace_sha256={run['trace']['sha256']} "
+                f"success_by_env={run['success_by_env']} "
+                f"max_phase_by_env={run['max_phase_by_env']} "
+                f"in_process_exact="
+                f"{None if comparison is None else comparison['exact_match']}",
+                flush=True,
+            )
+            if (
+                comparison is not None
+                and comparison["first_exact_divergence"] is not None
+            ):
+                print(
+                    "PUSH_DETERMINISM_DIVERGENCE "
+                    f"name={run['name']} "
+                    + " ".join(
+                        f"{key}={value}"
+                        for key, value in comparison[
+                            "first_exact_divergence"
+                        ].items()
+                    ),
+                    flush=True,
+                )
+        print(
+            "PUSH_DETERMINISM_AUDIT_DONE "
+            f"gate_pass={manifest['gate_pass']} "
+            f"in_process_discrete_outcome_match="
+            f"{manifest['in_process_discrete_outcome_match']} "
+            f"in_process_exact_trace_match="
+            f"{manifest['in_process_exact_trace_match']} "
+            f"external_discrete_outcome_match="
+            f"{manifest['external_discrete_outcome_match']} "
+            f"manifest={Path(args.determinism_audit_dir) / 'manifest.json'}",
+            flush=True,
+        )
+        return 0
     print(
         "LOCOMOTION_EVAL_START implementation=sequential_python_loop "
         f"policies={','.join(action_fns)} num_envs={eval_num_envs} "

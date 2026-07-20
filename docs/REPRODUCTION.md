@@ -102,6 +102,63 @@ combined throughput was `38.804 transitions/s`. Batch 4,096 cold compilation
 was `358.407 s`, so batch 1,024–2,048 is preferred for iteration despite the
 slightly higher 4,096 steady-state result.
 
+## Push determinism audit
+
+Before changing the Push controller or training a randomized task, audit the
+accepted inference parameters with the same solver-16 configuration and seed.
+The audit starts every policy run from one immutable reset, interleaves trained
+and zero-residual policies, and writes compressed step traces plus a fail-closed
+JSON manifest.
+
+Run a short contract check before the full episode:
+
+```bash
+/workspace/.venv/bin/python scripts/locomotion_learn_smoke.py \
+  --task push \
+  --config configs/push_stage2_near_field_solver16_qualification.yaml \
+  --eval-only \
+  --params-in /path/to/push_nearfield_v3_params \
+  --eval-num-envs 1 \
+  --eval-num-steps 20 \
+  --determinism-repeats 2 \
+  --determinism-audit-dir /workspace/evidence/push-audit-smoke
+```
+
+The first formal process records all 4,608 control steps for 16 environments:
+
+```bash
+/workspace/.venv/bin/python scripts/locomotion_learn_smoke.py \
+  --task push \
+  --config configs/push_stage2_near_field_solver16_qualification.yaml \
+  --eval-only \
+  --params-in /path/to/push_nearfield_v3_params \
+  --eval-num-envs 16 \
+  --eval-num-steps 4608 \
+  --determinism-repeats 3 \
+  --determinism-audit-dir /workspace/evidence/push-audit-a
+```
+
+Run a fresh process against that immutable reference:
+
+```bash
+/workspace/.venv/bin/python scripts/locomotion_learn_smoke.py \
+  --task push \
+  --config configs/push_stage2_near_field_solver16_qualification.yaml \
+  --eval-only \
+  --params-in /path/to/push_nearfield_v3_params \
+  --eval-num-envs 16 \
+  --eval-num-steps 4608 \
+  --determinism-repeats 3 \
+  --determinism-reference-dir /workspace/evidence/push-audit-a \
+  --determinism-audit-dir /workspace/evidence/push-audit-b
+```
+
+Each output directory is single-use. The manifest binds the commit, config and
+parameter SHA256, seed, device, policy order, initial-state fingerprint,
+per-environment discrete outcomes, trace digests, and first exact/1e-6
+divergence. Do not open randomized training while identical inputs produce
+order-dependent success, terminal, abnormal, or maximum-phase classifications.
+
 ## Standing qualification and exact resume
 
 The gfx1100-safe standing run consumes the committed configuration, bounds every
