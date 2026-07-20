@@ -77,6 +77,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         object_height_cost_scale: float = 5.0,
         object_position_x_offset_range: Sequence[float] = (0.0, 0.0),
         object_position_y_offset_range: Sequence[float] = (0.0, 0.0),
+        push_box_solref_timeconst: float | None = None,
         **kwargs,
     ) -> None:
         if approach_stop_distance <= 0.0:
@@ -118,6 +119,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("object height tolerance must be positive")
         if object_speed_cost_scale < 0.0 or object_height_cost_scale < 0.0:
             raise ValueError("task cost scales must be non-negative")
+        if push_box_solref_timeconst is not None and push_box_solref_timeconst <= 0.0:
+            raise ValueError("push box solref time constant must be positive")
         for axis, offset_range in (
             ("x", object_position_x_offset_range),
             ("y", object_position_y_offset_range),
@@ -202,6 +205,11 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         self._box_geom_id = self._required_id(
             mujoco.mjtObj.mjOBJ_GEOM, PUSH_BOX_GEOM_NAME
         )
+        if push_box_solref_timeconst is not None:
+            self.mj_model.geom_solref[self._box_geom_id, 0] = float(
+                push_box_solref_timeconst
+            )
+            self.mjx_model = mjx.put_model(self.mj_model)
         self._end_effector_site_id = self._required_id(
             mujoco.mjtObj.mjOBJ_SITE, END_EFFECTOR_SITE_NAME
         )

@@ -261,6 +261,21 @@ def test_push_align_entry_phase_sync_rejects_invalid_or_conflicting_values():
         )
 
 
+def test_push_box_contact_time_constant_can_be_softened():
+    env = Go2Z1PushEnv(push_box_solref_timeconst=0.04)
+
+    assert env.mj_model.geom_solref[env._box_geom_id, 0] == pytest.approx(0.04)
+    assert env.mj_model.geom_solref[env._box_geom_id, 1] == pytest.approx(1.0)
+
+
+def test_push_box_contact_time_constant_must_be_positive():
+    with pytest.raises(
+        ValueError,
+        match="push box solref time constant must be positive",
+    ):
+        Go2Z1PushEnv(push_box_solref_timeconst=0.0)
+
+
 def test_push_task_reward_is_phase_gated_and_bounded():
     env = Go2Z1PushEnv()
     previous = env.reset(jax.random.PRNGKey(0))

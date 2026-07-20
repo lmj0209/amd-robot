@@ -514,6 +514,52 @@ def test_push_position_x_phase_entry035_residual095_changes_only_scale() -> None
     assert residual095_reward == phase_entry_reward
 
 
+def test_push_position_x_contact_soft040_changes_only_box_contact() -> None:
+    phase_entry = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_phase_entry035_qualification.yaml"
+        ).read_text()
+    )
+    contact_soft = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align85_"
+                "phase_entry035_contact_soft040_qualification.yaml"
+            )
+        ).read_text()
+    )
+
+    assert contact_soft["status"] == (
+        "push_stage2_position_x_1cm_align85_"
+        "phase_entry035_contact_soft040_qualification"
+    )
+    assert contact_soft["push"]["push_box_solref_timeconst"] == 0.04
+    for section in (
+        "environment",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert contact_soft[section] == phase_entry[section]
+
+    phase_entry_push = dict(phase_entry["push"])
+    contact_soft_push = dict(contact_soft["push"])
+    contact_soft_push.pop("push_box_solref_timeconst")
+    assert contact_soft_push == phase_entry_push
+
+    phase_entry_reward = dict(phase_entry["reward"])
+    contact_soft_reward = dict(contact_soft["reward"])
+    phase_entry_reward.pop("profile")
+    contact_soft_reward.pop("profile")
+    assert contact_soft_reward == phase_entry_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 
