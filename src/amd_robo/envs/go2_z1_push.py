@@ -209,7 +209,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             self.mj_model.geom_solref[self._box_geom_id, 0] = float(
                 push_box_solref_timeconst
             )
-            self.mjx_model = mjx.put_model(self.mj_model)
+            self._mjx_model = mjx.put_model(self.mj_model, impl="jax")
         self._end_effector_site_id = self._required_id(
             mujoco.mjtObj.mjOBJ_SITE, END_EFFECTOR_SITE_NAME
         )
