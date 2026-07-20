@@ -222,6 +222,45 @@ def test_push_align_phase_fraction_rejects_invalid_values():
             Go2Z1PushEnv(align_gait_phase_fraction=fraction)
 
 
+def test_push_align_can_synchronize_phase_once_on_entry():
+    env = Go2Z1PushEnv(
+        approach_stop_distance=1.0,
+        align_entry_gait_phase_fraction=0.35,
+    )
+    state = env.reset(jax.random.PRNGKey(0))
+    first = env.step(state, jnp.zeros(env.action_size))
+    second = env.step(first, jnp.zeros(env.action_size))
+
+    phase_increment = 2.0 * jnp.pi * env.dt / env._gait_cycle_time
+    assert first.info["phase"] == int(TaskPhase.ALIGN)
+    assert jnp.isclose(
+        first.info["gait_phase"],
+        2.0 * jnp.pi * 0.35 + phase_increment,
+    )
+    assert jnp.isclose(
+        second.info["gait_phase"],
+        first.info["gait_phase"] + phase_increment,
+    )
+
+
+def test_push_align_entry_phase_sync_rejects_invalid_or_conflicting_values():
+    for fraction in (-0.01, 1.0):
+        with pytest.raises(
+            ValueError,
+            match=r"align entry gait phase fraction must be in \[0, 1\)",
+        ):
+            Go2Z1PushEnv(align_entry_gait_phase_fraction=fraction)
+
+    with pytest.raises(
+        ValueError,
+        match="continuous and entry-only gait phase sync conflict",
+    ):
+        Go2Z1PushEnv(
+            align_gait_phase_sync=True,
+            align_entry_gait_phase_fraction=0.35,
+        )
+
+
 def test_push_task_reward_is_phase_gated_and_bounded():
     env = Go2Z1PushEnv()
     previous = env.reset(jax.random.PRNGKey(0))

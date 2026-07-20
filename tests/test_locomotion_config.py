@@ -425,6 +425,48 @@ def test_push_position_x_phase_sync085_changes_only_align_phase_timing() -> None
     assert phase_sync_reward == align85_reward
 
 
+def test_push_position_x_phase_entry035_changes_only_align_phase_timing() -> None:
+    align85 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_qualification.yaml"
+        ).read_text()
+    )
+    phase_entry = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_phase_entry035_qualification.yaml"
+        ).read_text()
+    )
+
+    assert phase_entry["status"] == (
+        "push_stage2_position_x_1cm_align85_phase_entry035_qualification"
+    )
+    assert phase_entry["push"]["align_entry_gait_phase_fraction"] == 0.35
+    for section in (
+        "environment",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert phase_entry[section] == align85[section]
+
+    align85_push = dict(align85["push"])
+    phase_entry_push = dict(phase_entry["push"])
+    phase_entry_push.pop("align_entry_gait_phase_fraction")
+    assert phase_entry_push == align85_push
+
+    align85_reward = dict(align85["reward"])
+    phase_entry_reward = dict(phase_entry["reward"])
+    align85_reward.pop("profile")
+    phase_entry_reward.pop("profile")
+    assert phase_entry_reward == align85_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 
