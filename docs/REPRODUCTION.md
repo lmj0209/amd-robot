@@ -30,7 +30,9 @@
   `CartpoleBalance` loads with `impl=jax`, reset/step finite — TODO pin exact commit
   in `requirements/rgc.lock`
 - Verified lockfile: TODO (`requirements/rgc.lock`)
-- `system_info` evidence: TODO
+- `system_info` evidence: captured at commit `18bb8a6` on 2026-07-20;
+  image name and digest remain null because RGC does not expose them inside
+  the instance.
 - G0 commit and tag: **`g0-link`** (2026-07-16, on `main`)
 
 ## Findings (2026-07-16)
@@ -52,8 +54,53 @@
 
 ## Commands
 
-The exact install, smoke, training, evaluation, and benchmark commands are added
-only after they run successfully from a clean RGC environment.
+The exact install, smoke, training, evaluation, and benchmark commands are
+added only after they run successfully from a clean RGC environment.
+
+## Formal ROCm benchmark
+
+The measured Push scan uses `scripts/rocm_benchmark.py`. The worker places
+parameters on the target device before timing, separates reset compilation
+from the cold target-kernel call, warms up ten steps, synchronizes every
+timing boundary, and rejects an unexpected backend or non-finite result.
+
+Example combined point:
+
+```bash
+/workspace/.venv/bin/python scripts/rocm_benchmark.py \
+  --mode combined \
+  --config configs/push_stage2_near_field_solver16_qualification.yaml \
+  --params-in /path/to/push_nearfield_v3_params \
+  --batch-size 2048 \
+  --steps-per-repeat 100 \
+  --warmup-steps 10 \
+  --repeats 5 \
+  --latency-samples 50 \
+  --expected-backend gpu
+```
+
+For a same-instance CPU point, use the identical command with
+`JAX_PLATFORMS=cpu`, batch one, and `--expected-backend cpu`. Run each point
+in a fresh process and sample `amd-smi metric` concurrently for GPU points.
+
+Validate and combine raw GPU and CPU directories:
+
+```bash
+python scripts/aggregate_rocm_benchmark.py \
+  --input-dir /path/to/gpu-raw \
+  --input-dir /path/to/cpu-raw \
+  --output-csv benchmark_summary.csv \
+  --output-json benchmark_summary.json \
+  --expected-commit 18bb8a6462ba510a55825723b4ccb4a0e3f3743c
+```
+
+The 2026-07-20 scan completed all 21 formal points with exit code zero and
+finite results. Combined Push throughput was `49.812`, `2,334.474`,
+`5,297.430`, `7,156.298`, `7,404.157`, and `7,632.187 transitions/s` at GPU
+batches 1, 64, 256, 1,024, 2,048, and 4,096. Same-instance CPU batch-one
+combined throughput was `38.804 transitions/s`. Batch 4,096 cold compilation
+was `358.407 s`, so batch 1,024–2,048 is preferred for iteration despite the
+slightly higher 4,096 steady-state result.
 
 ## Standing qualification and exact resume
 

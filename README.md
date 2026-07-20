@@ -28,6 +28,11 @@ the policy interface.
 - `tests/` runs CPU-safe contract tests.
 - `scripts/smoke_test.py` is a fail-closed RGC Gate G0 check.
 - `scripts/system_info.py` creates immutable benchmark fingerprints.
+- `scripts/rocm_benchmark.py` separates reset JIT, cold target-kernel JIT, and
+  synchronized steady-state timing for policy, environment, and combined
+  execution.
+- `scripts/aggregate_rocm_benchmark.py` validates exit codes, finite results,
+  commit identity, and `amd-smi` telemetry before producing CSV/JSON evidence.
 - `scripts/push_rollout_render.py` renders one deterministic Push rollout and
   records every frame, phase transition, metric, seed, and artifact hash.
 - `assets/manifest.yaml` and `artifacts/manifest.json` track external files.
@@ -134,6 +139,62 @@ ffmpeg -framerate 20 \
 The measured rollout completed at step 4,060 with final goal error
 `0.079138 m`, maximum object speed `0.305667 m/s`, zero illegal/non-finite
 events, and 813 frames (`40.65 s`).
+
+## Measured ROCm performance
+
+The formal scan used one W7900, ROCm 7.2.1, JAX 0.10.2, commit `18bb8a6`,
+the solver-16 Push environment, at least ten warmup steps, and five
+synchronized repeats of 100 steps per point. All 21 GPU/CPU points exited
+zero and reported finite results.
+
+| Backend | Batch | Environment steps/s | Policy + environment steps/s |
+|---|---:|---:|---:|
+| CPU | 1 | `40.160` | `38.804` |
+| GPU | 1 | `51.177` | `49.812` |
+| GPU | 64 | `2,679.273` | `2,334.474` |
+| GPU | 256 | `5,262.366` | `5,297.430` |
+| GPU | 1,024 | `7,186.548` | `7,156.298` |
+| GPU | 2,048 | `7,301.583` | `7,404.157` |
+| GPU | 4,096 | `7,533.651` | `7,632.187` |
+
+Batch 4,096 has the highest measured throughput, but it improves combined
+throughput only 3.08% over batch 2,048 while cold target-kernel compilation
+rises from `102.777 s` to `358.407 s` and peak sampled VRAM rises from
+`9,339 MB` to `18,567 MB`. Batch 1,024–2,048 is the practical iteration
+range. Pure deterministic policy throughput scales from `8,231` inferences/s
+at GPU batch one to `8.20M` inferences/s at batch 4,096; the same-instance CPU
+is faster for the unbatched policy call.
+
+The selected Push fixed-v3 training run processed 73,728 transitions in
+`345.761 s`: `213.234 transitions/s` including cold compilation and
+`383.168 SPS` in the final reused host call. It used `training_scan=1`;
+large fused PPO scans remain outside the validated gfx1100 boundary.
+
+Run one formal point:
+
+```bash
+/workspace/.venv/bin/python scripts/rocm_benchmark.py \
+  --mode combined \
+  --config configs/push_stage2_near_field_solver16_qualification.yaml \
+  --params-in /path/to/push_nearfield_v3_params \
+  --batch-size 2048 \
+  --steps-per-repeat 100 \
+  --warmup-steps 10 \
+  --repeats 5 \
+  --latency-samples 50 \
+  --expected-backend gpu
+```
+
+Aggregate separate GPU and CPU raw directories:
+
+```bash
+python scripts/aggregate_rocm_benchmark.py \
+  --input-dir /path/to/gpu-raw \
+  --input-dir /path/to/cpu-raw \
+  --output-csv benchmark_summary.csv \
+  --output-json benchmark_summary.json \
+  --expected-commit 18bb8a6462ba510a55825723b4ccb4a0e3f3743c
+```
 
 ## Reproduction and results
 
