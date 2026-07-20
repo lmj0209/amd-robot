@@ -6,6 +6,7 @@ import pytest
 from amd_robo.evaluation.determinism import (
     array_sha256,
     first_trace_divergence,
+    normalized_discrete_outcome,
     sha256_path,
     trace_sha256,
     trace_summary,
@@ -101,3 +102,19 @@ def test_sha256_path_covers_files_and_directory_layout(tmp_path: Path) -> None:
     (second / "nested").mkdir()
     (second / "nested" / "artifact.bin").write_bytes(b"payload")
     assert sha256_path(first) != sha256_path(second)
+
+
+def test_discrete_outcome_is_stable_across_json_round_trip() -> None:
+    in_memory = {
+        "success_by_env": (1, 0),
+        "max_phase_by_env": np.asarray([3, 1], dtype=np.int32),
+    }
+    from_json = {
+        "success_by_env": [1, 0],
+        "max_phase_by_env": [3, 1],
+    }
+    fields = ("success_by_env", "max_phase_by_env")
+
+    assert normalized_discrete_outcome(
+        in_memory, fields
+    ) == normalized_discrete_outcome(from_json, fields)

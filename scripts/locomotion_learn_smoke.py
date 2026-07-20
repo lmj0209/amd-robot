@@ -28,6 +28,7 @@ from amd_robo.envs.go2_z1_locomotion import (  # noqa: E402
 from amd_robo.envs.go2_z1_push import Go2Z1PushEnv  # noqa: E402
 from amd_robo.evaluation.determinism import (  # noqa: E402
     first_trace_divergence,
+    normalized_discrete_outcome,
     sha256_path,
     trace_summary,
 )
@@ -234,15 +235,15 @@ def _policy_audit_sequence(action_fns, repeats: int):
 
 
 def _discrete_push_outcome(run: dict[str, object]) -> dict[str, object]:
-    return {
-        name: run[name]
-        for name in (
+    return normalized_discrete_outcome(
+        run,
+        (
             "success_by_env",
             "terminal_by_env",
             "abnormal_by_env",
             "max_phase_by_env",
-        )
-    }
+        ),
+    )
 
 
 def _comparison_report(

@@ -75,6 +75,15 @@ def trace_summary(fields: Mapping[str, np.ndarray]) -> dict[str, object]:
     }
 
 
+def normalized_discrete_outcome(
+    record: Mapping[str, object],
+    field_names: tuple[str, ...],
+) -> dict[str, object]:
+    """Normalizes array-like outcomes across memory and JSON representations."""
+
+    return {name: np.asarray(record[name]).tolist() for name in field_names}
+
+
 def _python_scalar(value: np.generic) -> float | int | bool:
     scalar = value.item()
     if isinstance(scalar, (bool, int, float)):
@@ -203,4 +212,3 @@ def sha256_path(path: str | Path) -> str:
         digest.update(item.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
-
