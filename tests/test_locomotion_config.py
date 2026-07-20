@@ -812,6 +812,61 @@ def test_push_position_x_arm_residual_changes_only_arm_authority() -> None:
     assert arm_residual_reward == compliant_reward
 
 
+def test_push_position_x_arm_ee_x_projects_joint_authority() -> None:
+    joint_residual = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align90_"
+                "phase_entry035_arm_residual_qualification.yaml"
+            )
+        ).read_text()
+    )
+    ee_x = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align90_"
+                "phase_entry035_arm_ee_x_qualification.yaml"
+            )
+        ).read_text()
+    )
+
+    assert ee_x["status"] == (
+        "push_stage2_position_x_1cm_align90_"
+        "phase_entry035_arm_ee_x_qualification"
+    )
+    assert ee_x["push"]["push_arm_residual_mode"] == "ee_x"
+    assert ee_x["push"]["push_arm_ee_x_range"] == 0.005
+    for section in (
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert ee_x[section] == joint_residual[section]
+
+    joint_environment = dict(joint_residual["environment"])
+    ee_x_environment = dict(ee_x["environment"])
+    joint_environment.pop("arm_action_scale")
+    assert ee_x_environment == joint_environment
+
+    joint_push = dict(joint_residual["push"])
+    ee_x_push = dict(ee_x["push"])
+    ee_x_push.pop("push_arm_residual_mode")
+    ee_x_push.pop("push_arm_ee_x_range")
+    assert ee_x_push == joint_push
+
+    joint_reward = dict(joint_residual["reward"])
+    ee_x_reward = dict(ee_x["reward"])
+    joint_reward.pop("profile")
+    ee_x_reward.pop("profile")
+    assert ee_x_reward == joint_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 

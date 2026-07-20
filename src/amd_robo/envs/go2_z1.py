@@ -231,8 +231,12 @@ class Go2Z1Env(MjxEnv):
         action = jnp.clip(jnp.asarray(action, dtype=jnp.float32), -1.0, 1.0)
         if self._mask_arm:
             action = action * _LEG_MASK
-        ctrl = self._home_ctrl + self._action_scale_vector * action
+        ctrl = self._home_ctrl + self._policy_ctrl_residual(action)
         return self._step_with_ctrl(state, action, ctrl)
+
+    def _policy_ctrl_residual(self, action: jax.Array) -> jax.Array:
+        """Map a normalized policy action to actuator target offsets."""
+        return self._action_scale_vector * action
 
     def _step_with_ctrl(
         self,

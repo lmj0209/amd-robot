@@ -190,6 +190,48 @@ def test_push_arm_residual_rejects_global_arm_mask():
         Go2Z1PushEnv(push_arm_residual_enabled=True)
 
 
+def test_push_arm_residual_can_be_projected_to_horizontal_ee_motion():
+    env = Go2Z1PushEnv(
+        push_arm_residual_enabled=True,
+        push_arm_residual_mode="ee_x",
+        push_arm_ee_x_range=0.005,
+        mask_arm=False,
+    )
+    action = jnp.zeros(env.action_size).at[12:18].set(
+        env._push_arm_policy_direction
+    )
+    residual = env._policy_ctrl_residual(action)
+    ee_displacement = env._push_arm_linear_jacobian @ residual[12:18]
+
+    assert jnp.allclose(ee_displacement, jnp.asarray([0.005, 0.0, 0.0]))
+    assert jnp.max(jnp.abs(residual[12:18])) < 0.01
+    assert residual[18] == 0.0
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        (
+            {"push_arm_residual_mode": "invalid"},
+            "push arm residual mode must be joint or ee_x",
+        ),
+        (
+            {"push_arm_ee_x_range": 0.0},
+            "push arm EE x range must be positive",
+        ),
+        (
+            {"push_arm_residual_mode": "ee_x"},
+            "push arm residual mode requires arm residuals",
+        ),
+    ],
+)
+def test_push_arm_projection_rejects_invalid_configuration(
+    kwargs: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        Go2Z1PushEnv(**kwargs)
+
+
 def test_push_command_ramp_uses_smoothstep_before_full_speed():
     env = Go2Z1PushEnv(push_command_ramp_duration=1.0)
     state = env.reset(jax.random.PRNGKey(0))

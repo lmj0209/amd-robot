@@ -8,6 +8,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import mujoco
+import numpy as np
 from mujoco import mjx
 
 from amd_robo.contracts import ACTION_LAYOUT, TaskPhase
@@ -86,6 +87,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         push_box_solref_timeconst: float | None = None,
         push_pad_solref_timeconst: float | None = None,
         push_arm_residual_enabled: bool = False,
+        push_arm_residual_mode: str = "joint",
+        push_arm_ee_x_range: float = 0.005,
         **kwargs,
     ) -> None:
         if approach_stop_distance <= 0.0:
@@ -131,6 +134,12 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("push box solref time constant must be positive")
         if push_pad_solref_timeconst is not None and push_pad_solref_timeconst <= 0.0:
             raise ValueError("push pad solref time constant must be positive")
+        if push_arm_residual_mode not in ("joint", "ee_x"):
+            raise ValueError("push arm residual mode must be joint or ee_x")
+        if push_arm_ee_x_range <= 0.0:
+            raise ValueError("push arm EE x range must be positive")
+        if push_arm_residual_mode != "joint" and not push_arm_residual_enabled:
+            raise ValueError("push arm residual mode requires arm residuals")
         for axis, offset_range in (
             ("x", object_position_x_offset_range),
             ("y", object_position_y_offset_range),
@@ -176,6 +185,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             )
         )
         self._push_arm_residual_enabled = bool(push_arm_residual_enabled)
+        self._push_arm_residual_mode = push_arm_residual_mode
+        self._push_arm_ee_x_range = float(push_arm_ee_x_range)
         self._task_reward_scales = {
             "approach_progress": float(approach_progress_scale),
             "align_progress": float(align_progress_scale),
@@ -259,6 +270,11 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             | jnp.any(self._align_arm_joint_target > self._ctrl_max[12:18])
         ):
             raise ValueError("align arm target exceeds actuator limits")
+        self._push_arm_linear_jacobian = None
+        self._push_arm_joint_delta = None
+        self._push_arm_policy_direction = None
+        if self._push_arm_residual_mode == "ee_x":
+            self._initialize_push_arm_ee_x_projection()
         self._allowed_floor_geom_ids = jnp.concatenate(
             [
                 self._allowed_floor_geom_ids,
@@ -461,6 +477,70 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         else:
             residual_mask = jnp.ones(self.action_size, dtype=jnp.float32)
         return residual_mask * pushing.astype(jnp.float32)
+
+    def _initialize_push_arm_ee_x_projection(self) -> None:
+        """Build a local arm projection for pure world-x EE displacement."""
+        data = mujoco.MjData(self.mj_model)
+        data.qpos[:] = self.mj_model.key_qpos[self._home_keyframe_id]
+        arm_qpos_indices = np.asarray(
+            self._joint_qpos_indices[ACTION_LAYOUT.arm],
+            dtype=np.int32,
+        )
+        arm_dof_indices = np.asarray(
+            self._joint_dof_indices[ACTION_LAYOUT.arm],
+            dtype=np.int32,
+        )
+        data.qpos[arm_qpos_indices] = np.asarray(self._align_arm_joint_target)
+        mujoco.mj_forward(self.mj_model, data)
+
+        jacobian = np.zeros((3, self.mj_model.nv))
+        angular_jacobian = np.zeros((3, self.mj_model.nv))
+        mujoco.mj_jacSite(
+            self.mj_model,
+            data,
+            jacobian,
+            angular_jacobian,
+            self._end_effector_site_id,
+        )
+        arm_jacobian = jacobian[:, arm_dof_indices]
+        target_displacement = np.asarray(
+            [self._push_arm_ee_x_range, 0.0, 0.0]
+        )
+        joint_delta = np.linalg.pinv(arm_jacobian, rcond=1e-6) @ target_displacement
+        predicted_displacement = arm_jacobian @ joint_delta
+        if not np.allclose(
+            predicted_displacement,
+            target_displacement,
+            atol=1e-8,
+            rtol=1e-6,
+        ):
+            raise ValueError("push arm EE x projection is ill-conditioned")
+        direction_norm = np.linalg.norm(joint_delta)
+        if not np.isfinite(direction_norm) or direction_norm <= 0.0:
+            raise ValueError("push arm EE x projection is non-finite")
+        self._push_arm_linear_jacobian = jnp.asarray(arm_jacobian)
+        self._push_arm_joint_delta = jnp.asarray(joint_delta)
+        self._push_arm_policy_direction = jnp.asarray(
+            joint_delta / direction_norm
+        )
+
+    def _policy_ctrl_residual(self, action: jax.Array) -> jax.Array:
+        residual = super()._policy_ctrl_residual(action)
+        if (
+            self._push_arm_residual_enabled
+            and self._push_arm_residual_mode == "ee_x"
+        ):
+            arm_action = action[ACTION_LAYOUT.arm]
+            scalar = jnp.clip(
+                jnp.dot(arm_action, self._push_arm_policy_direction),
+                -1.0,
+                1.0,
+            )
+            residual = residual.at[ACTION_LAYOUT.arm].set(
+                scalar * self._push_arm_joint_delta
+            )
+            residual = residual.at[ACTION_LAYOUT.gripper].set(0.0)
+        return residual
 
     def _task_reward_components(self, previous, current):
         phase = current.info["phase"]
