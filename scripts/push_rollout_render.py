@@ -165,6 +165,14 @@ def main() -> int:
     output_dir.mkdir(parents=True)
     mj_data = mujoco.MjData(env.mj_model)
     camera = _camera()
+    env.mj_model.vis.global_.offwidth = max(
+        env.mj_model.vis.global_.offwidth,
+        args.width,
+    )
+    env.mj_model.vis.global_.offheight = max(
+        env.mj_model.vis.global_.offheight,
+        args.height,
+    )
     renderer = mujoco.Renderer(
         env.mj_model,
         height=args.height,
