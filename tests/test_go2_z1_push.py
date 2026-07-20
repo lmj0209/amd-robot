@@ -252,6 +252,34 @@ def test_push_command_ramp_uses_smoothstep_before_full_speed():
     assert jnp.allclose(command_at(200), env._push_command)
 
 
+def test_hold_entry_command_decay_uses_smoothstep_before_stopping():
+    env = Go2Z1PushEnv(hold_entry_command_decay_duration=0.5)
+    state = env.reset(jax.random.PRNGKey(0))
+
+    def command_at(success_count):
+        staged = state.replace(
+            info={
+                **state.info,
+                "phase": jnp.asarray(int(TaskPhase.HOLD)),
+                "success_count": jnp.asarray(success_count, dtype=jnp.int32),
+            }
+        )
+        return env._hold_entry_command_for_state(staged)
+
+    assert jnp.allclose(command_at(0), env._push_command)
+    assert jnp.allclose(command_at(25), env._push_command * 0.5)
+    assert jnp.allclose(command_at(50), 0.0)
+    assert jnp.allclose(command_at(100), 0.0)
+
+
+def test_hold_entry_command_decay_rejects_negative_duration():
+    with pytest.raises(
+        ValueError,
+        match="hold entry command decay duration must be non-negative",
+    ):
+        Go2Z1PushEnv(hold_entry_command_decay_duration=-0.5)
+
+
 def test_push_align_can_synchronize_crawl_phase_before_contact():
     env = Go2Z1PushEnv(
         approach_stop_distance=1.0,

@@ -867,6 +867,50 @@ def test_push_position_x_arm_ee_x_projects_joint_authority() -> None:
     assert ee_x_reward == joint_reward
 
 
+def test_push_hold_entry_decay_changes_only_command_transition() -> None:
+    base = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align90_"
+                "phase_entry035_arm_ee_x_qualification.yaml"
+            )
+        ).read_text()
+    )
+    decay = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align90_phase_entry035_"
+                "arm_ee_x_hold_decay050_qualification.yaml"
+            )
+        ).read_text()
+    )
+
+    assert decay["status"] == (
+        "push_stage2_position_x_1cm_align90_phase_entry035_"
+        "arm_ee_x_hold_decay050_qualification"
+    )
+    assert decay["push"]["hold_entry_command_decay_duration"] == 0.5
+    for section in (
+        "environment",
+        "curriculum",
+        "reward",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert decay[section] == base[section]
+
+    base_push = dict(base["push"])
+    decay_push = dict(decay["push"])
+    decay_push.pop("hold_entry_command_decay_duration")
+    assert decay_push == base_push
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 

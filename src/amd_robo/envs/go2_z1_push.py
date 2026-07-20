@@ -68,6 +68,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         align_distance_threshold: float = DEFAULT_ALIGN_DISTANCE_THRESHOLD,
         push_command_x: float = DEFAULT_PUSH_COMMAND_X,
         push_command_ramp_duration: float = 0.0,
+        hold_entry_command_decay_duration: float = 0.0,
         align_gait_phase_sync: bool = False,
         align_gait_phase_fraction: float = 0.0,
         align_entry_gait_phase_fraction: float | None = None,
@@ -101,6 +102,10 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("push command must be positive")
         if push_command_ramp_duration < 0.0:
             raise ValueError("push command ramp duration must be non-negative")
+        if hold_entry_command_decay_duration < 0.0:
+            raise ValueError(
+                "hold entry command decay duration must be non-negative"
+            )
         if not 0.0 <= align_gait_phase_fraction < 1.0:
             raise ValueError("align gait phase fraction must be in [0, 1)")
         if align_entry_gait_phase_fraction is not None and not (
@@ -160,6 +165,9 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             dtype=jnp.float32,
         )
         self._push_command_ramp_duration = float(push_command_ramp_duration)
+        self._hold_entry_command_decay_duration = float(
+            hold_entry_command_decay_duration
+        )
         self._align_gait_phase_sync = bool(align_gait_phase_sync)
         self._align_gait_phase = float(2.0 * jnp.pi * align_gait_phase_fraction)
         self._align_entry_gait_phase = (
@@ -370,7 +378,11 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             jnp.where(
                 phase == int(TaskPhase.PUSH),
                 self._push_command_for_state(state),
-                jnp.zeros_like(state.info["command"]),
+                jnp.where(
+                    phase == int(TaskPhase.HOLD),
+                    self._hold_entry_command_for_state(state),
+                    jnp.zeros_like(state.info["command"]),
+                ),
             ),
         )
         align_step_limit = round(self._align_duration / self.dt)
@@ -454,6 +466,19 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         )
         smooth_progress = progress * progress * (3.0 - 2.0 * progress)
         return self._push_command * smooth_progress
+
+    def _hold_entry_command_for_state(self, state) -> jax.Array:
+        if self._hold_entry_command_decay_duration == 0.0:
+            return jnp.zeros_like(self._push_command)
+        progress = jnp.clip(
+            state.info["success_count"]
+            * self.dt
+            / self._hold_entry_command_decay_duration,
+            0.0,
+            1.0,
+        )
+        smooth_progress = progress * progress * (3.0 - 2.0 * progress)
+        return self._push_command * (1.0 - smooth_progress)
 
     def _task_actuator_reference(self, state) -> jax.Array:
         progress = jnp.clip(
