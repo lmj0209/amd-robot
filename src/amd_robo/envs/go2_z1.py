@@ -60,6 +60,7 @@ class Go2Z1Env(MjxEnv):
         xml_path: str | Path = DEFAULT_XML,
         ctrl_dt: float = 0.01,
         action_scale: float = 0.25,
+        arm_action_scale: float | None = None,
         leg_kp: float | None = None,
         leg_kd: float | None = None,
         arm_kp: float | None = None,
@@ -71,6 +72,10 @@ class Go2Z1Env(MjxEnv):
         foot_condim: int | None = None,
         bound_observations: bool = True,
     ) -> None:
+        if action_scale <= 0.0:
+            raise ValueError("action_scale must be positive")
+        if arm_action_scale is not None and arm_action_scale <= 0.0:
+            raise ValueError("arm_action_scale must be positive")
         self._xml_path = str(xml_path)
         self._mj_model = mujoco.MjModel.from_xml_path(self._xml_path)
         if solver_iterations is not None:
@@ -155,6 +160,15 @@ class Go2Z1Env(MjxEnv):
         )
         self._mjx_model = mjx.put_model(self._mj_model, impl="jax")
         self._action_scale = float(action_scale)
+        self._action_scale_vector = jnp.full(
+            ACTION_LAYOUT.size,
+            self._action_scale,
+            dtype=jnp.float32,
+        )
+        if arm_action_scale is not None:
+            self._action_scale_vector = self._action_scale_vector.at[
+                ACTION_LAYOUT.arm
+            ].set(float(arm_action_scale))
         self._leg_kp = (
             float(self._mj_model.actuator_gainprm[0, 0])
             if leg_kp is None
@@ -217,7 +231,7 @@ class Go2Z1Env(MjxEnv):
         action = jnp.clip(jnp.asarray(action, dtype=jnp.float32), -1.0, 1.0)
         if self._mask_arm:
             action = action * _LEG_MASK
-        ctrl = self._home_ctrl + self._action_scale * action
+        ctrl = self._home_ctrl + self._action_scale_vector * action
         return self._step_with_ctrl(state, action, ctrl)
 
     def _step_with_ctrl(

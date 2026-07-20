@@ -754,6 +754,64 @@ def test_push_position_x_compliant_arm_align90_changes_only_align_gate() -> None
     assert align90_reward == arm_compliance_reward
 
 
+def test_push_position_x_arm_residual_changes_only_arm_authority() -> None:
+    compliant = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align90_"
+                "phase_entry035_arm_compliance_qualification.yaml"
+            )
+        ).read_text()
+    )
+    arm_residual = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align90_"
+                "phase_entry035_arm_residual_qualification.yaml"
+            )
+        ).read_text()
+    )
+
+    assert arm_residual["status"] == (
+        "push_stage2_position_x_1cm_align90_"
+        "phase_entry035_arm_residual_qualification"
+    )
+    assert arm_residual["environment"]["arm_action_scale"] == 0.02
+    assert arm_residual["environment"]["mask_arm"] is False
+    assert arm_residual["push"]["push_arm_residual_enabled"] is True
+    assert arm_residual["reward"]["arm_action_magnitude_cost_scale"] == 0.01
+    for section in (
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert arm_residual[section] == compliant[section]
+
+    compliant_environment = dict(compliant["environment"])
+    arm_residual_environment = dict(arm_residual["environment"])
+    arm_residual_environment.pop("arm_action_scale")
+    arm_residual_environment.pop("mask_arm")
+    assert arm_residual_environment == compliant_environment
+
+    compliant_push = dict(compliant["push"])
+    arm_residual_push = dict(arm_residual["push"])
+    arm_residual_push.pop("push_arm_residual_enabled")
+    assert arm_residual_push == compliant_push
+
+    compliant_reward = dict(compliant["reward"])
+    arm_residual_reward = dict(arm_residual["reward"])
+    compliant_reward.pop("profile")
+    arm_residual_reward.pop("profile")
+    compliant_reward["arm_action_magnitude_cost_scale"] = 0.01
+    assert arm_residual_reward == compliant_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 

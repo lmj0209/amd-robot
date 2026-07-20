@@ -58,10 +58,12 @@ def _make_env(
     return env_class(
         ctrl_dt=environment["control_timestep"],
         action_scale=environment.get("action_scale", 0.25),
+        arm_action_scale=environment.get("arm_action_scale"),
         leg_kp=environment.get("leg_kp"),
         leg_kd=environment.get("leg_kd"),
         arm_kp=environment.get("arm_kp"),
         arm_kd=environment.get("arm_kd"),
+        mask_arm=environment.get("mask_arm", True),
         foot_condim=environment["foot_condim"],
         bound_observations=environment["bounded_observations"],
         command_x_range=environment["command_x_range"],

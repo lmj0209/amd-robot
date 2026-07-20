@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
 
-from amd_robo.contracts import TaskPhase
+from amd_robo.contracts import ACTION_LAYOUT, TaskPhase
 from amd_robo.envs.go2_z1 import REPO_ROOT, _rotmat
 from amd_robo.envs.go2_z1_locomotion import Go2Z1LocomotionEnv
 
@@ -85,6 +85,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         object_position_y_offset_range: Sequence[float] = (0.0, 0.0),
         push_box_solref_timeconst: float | None = None,
         push_pad_solref_timeconst: float | None = None,
+        push_arm_residual_enabled: bool = False,
         **kwargs,
     ) -> None:
         if approach_stop_distance <= 0.0:
@@ -174,6 +175,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
                 *self._object_position_y_offset_range,
             )
         )
+        self._push_arm_residual_enabled = bool(push_arm_residual_enabled)
         self._task_reward_scales = {
             "approach_progress": float(approach_progress_scale),
             "align_progress": float(align_progress_scale),
@@ -204,6 +206,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         kwargs.setdefault("crawl_min_air_time", 0.07)
         kwargs.setdefault("crawl_pose_reference_enabled", True)
         super().__init__(xml_path=xml_path, **kwargs)
+        if self._push_arm_residual_enabled and self._mask_arm:
+            raise ValueError("push arm residual requires mask_arm=False")
 
         self._box_body_id = self._required_id(
             mujoco.mjtObj.mjOBJ_BODY, PUSH_BOX_BODY_NAME
@@ -450,7 +454,13 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
     def _task_policy_action_mask(self, state) -> jax.Array:
         """Expose policy residuals only while physically pushing the box."""
         pushing = state.info["phase"] == int(TaskPhase.PUSH)
-        return jnp.full((self.action_size,), pushing, dtype=jnp.float32)
+        if self._push_arm_residual_enabled:
+            residual_mask = jnp.ones(self.action_size, dtype=jnp.float32).at[
+                ACTION_LAYOUT.gripper
+            ].set(0.0)
+        else:
+            residual_mask = jnp.ones(self.action_size, dtype=jnp.float32)
+        return residual_mask * pushing.astype(jnp.float32)
 
     def _task_reward_components(self, previous, current):
         phase = current.info["phase"]

@@ -1,0 +1,116 @@
+schema_version: 1
+status: push_stage2_position_x_1cm_align90_phase_entry035_arm_residual_qualification
+algorithm: brax_ppo
+seed: 0
+
+environment:
+  control_timestep: 0.01
+  action_scale: 0.1
+  arm_action_scale: 0.02
+  leg_kp: 150.0
+  leg_kd: 8.0
+  arm_kp: 300.0
+  arm_kd: 30.0
+  mask_arm: false
+  foot_condim: 6
+  bounded_observations: true
+  randomized_reset: false
+  command_x_range: [0.02, 0.03]
+  zero_command_probability: 0.0
+  workspace_limit: 5.0
+  gait_cycle_time: 4.0
+  crawl_reference_enabled: true
+  crawl_shift_end_fraction: 0.25
+  crawl_lift_start_fraction: 0.45
+  crawl_lift_end_fraction: 0.85
+  crawl_foot_space_enabled: true
+  crawl_foot_step_length: 0.1
+  crawl_foot_clearance: 0.06
+  crawl_body_shift_x: 0.016
+  crawl_body_shift_y: 0.02
+  crawl_min_air_time: 0.07
+  crawl_pose_reference_enabled: true
+
+push:
+  approach_stop_distance: 0.2
+  align_duration: 6.0
+  align_distance_threshold: 0.09
+  push_command_x: 0.025
+  align_entry_gait_phase_fraction: 0.35
+  push_arm_residual_enabled: true
+  goal_threshold: 0.08
+  success_hold_steps: 100
+  approach_progress_scale: 10.0
+  align_progress_scale: 5.0
+  push_progress_scale: 20.0
+  hold_scale: 1.0
+  success_bonus_scale: 10.0
+  object_speed_limit: 0.5
+  object_speed_cost_scale: 20.0
+  object_height_tolerance: 0.02
+  object_height_cost_scale: 5.0
+  object_position_x_offset_range: [-0.01, 0.01]
+  object_position_y_offset_range: [0.0, 0.0]
+
+curriculum:
+  deterministic_phases: [APPROACH, ALIGN, HOLD]
+  learned_residual_phases: [PUSH]
+
+reward:
+  profile: push_stage2_position_x_1cm_align90_phase_entry035_arm_residual_v1
+  tracking_sigma: 0.025
+  tracking_linear_velocity_scale: 2.0
+  tracking_angular_velocity_scale: 0.5
+  pose_scale: 0.5
+  vertical_velocity_cost_scale: 0.5
+  angular_velocity_xy_cost_scale: 0.05
+  orientation_cost_scale: 2.0
+  stand_still_cost_scale: 0.5
+  torque_cost_scale: 0.0001
+  action_rate_cost_scale: 0.01
+  action_magnitude_cost_scale: 0.001
+  arm_action_magnitude_cost_scale: 0.01
+  feet_slip_cost_scale: 0.1
+  feet_clearance_cost_scale: 2.0
+  feet_height_cost_scale: 0.2
+  feet_air_time_scale: 0.1
+  max_foot_height: 0.1
+  termination_cost_scale: 2.0
+  illegal_contact_cost_scale: 2.0
+
+ppo:
+  num_timesteps: 73728
+  num_envs: 16
+  episode_length: 4608
+  unroll_length: 4
+  batch_size: 16
+  num_minibatches: 1
+  num_updates_per_batch: 2
+  learning_rate: 0.00001
+  learning_rate_schedule: NONE
+  desired_kl: 0.01
+  max_grad_norm: 1.0
+  entropy_cost: 0.01
+  discounting: 0.97
+  normalize_observations: false
+  policy_hidden_layer_sizes: [512, 256, 128]
+  value_hidden_layer_sizes: [512, 256, 128]
+
+rocm_guardrails:
+  max_physics_substeps_per_control: 5
+  max_training_steps_per_host_call: 1
+  brax_run_evals: false
+
+manual_evaluation:
+  enabled: true
+  seed: 777
+  num_envs: 4
+  num_steps: 4608
+  repeat_count: 1
+  fixed_command: [0.025, 0.0, 0.0]
+  implementation: sequential_python_loop
+
+checkpoint:
+  scope: full_training_session
+  interval_steps: 18432
+  includes_rollout_state: true

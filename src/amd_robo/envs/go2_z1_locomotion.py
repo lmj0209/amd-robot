@@ -468,7 +468,7 @@ class Go2Z1LocomotionEnv(Go2Z1Env):
                 )
             ctrl = (
                 self._home_ctrl
-                + self._action_scale * applied_action
+                + self._action_scale_vector * applied_action
                 + self._task_actuator_reference(state)
             )
             ctrl = ctrl.at[:12].add(crawl_reference)

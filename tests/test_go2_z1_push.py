@@ -156,6 +156,40 @@ def test_push_policy_residual_is_active_only_in_push_phase():
     assert jnp.all(env._task_policy_action_mask(pushing) == 1.0)
 
 
+def test_push_arm_residual_keeps_gripper_locked():
+    env = Go2Z1PushEnv(
+        push_arm_residual_enabled=True,
+        mask_arm=False,
+        arm_action_scale=0.02,
+    )
+    state = env.reset(jax.random.PRNGKey(0))
+    staged = state.replace(
+        info={
+            **state.info,
+            "phase": jnp.asarray(int(TaskPhase.ALIGN)),
+        }
+    )
+    pushing = state.replace(
+        info={
+            **state.info,
+            "phase": jnp.asarray(int(TaskPhase.PUSH)),
+        }
+    )
+
+    assert jnp.all(env._task_policy_action_mask(staged) == 0.0)
+    assert jnp.all(env._task_policy_action_mask(pushing)[:18] == 1.0)
+    assert env._task_policy_action_mask(pushing)[18] == 0.0
+    assert jnp.allclose(env._action_scale_vector[12:18], 0.02)
+
+
+def test_push_arm_residual_rejects_global_arm_mask():
+    with pytest.raises(
+        ValueError,
+        match="push arm residual requires mask_arm=False",
+    ):
+        Go2Z1PushEnv(push_arm_residual_enabled=True)
+
+
 def test_push_command_ramp_uses_smoothstep_before_full_speed():
     env = Go2Z1PushEnv(push_command_ramp_duration=1.0)
     state = env.reset(jax.random.PRNGKey(0))

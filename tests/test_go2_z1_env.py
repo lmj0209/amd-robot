@@ -57,6 +57,32 @@ def test_arm_pd_override_rejects_invalid_values(
         Go2Z1Env(**kwargs)
 
 
+def test_arm_action_scale_is_independent_from_legs_and_gripper() -> None:
+    env = Go2Z1Env(
+        action_scale=0.1,
+        arm_action_scale=0.02,
+        mask_arm=False,
+    )
+
+    assert jnp.allclose(env._action_scale_vector[:12], 0.1)
+    assert jnp.allclose(env._action_scale_vector[12:18], 0.02)
+    assert jnp.allclose(env._action_scale_vector[18], 0.1)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"action_scale": 0.0}, "action_scale must be positive"),
+        ({"arm_action_scale": 0.0}, "arm_action_scale must be positive"),
+    ],
+)
+def test_action_scale_rejects_invalid_values(
+    kwargs: dict[str, float], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        Go2Z1Env(**kwargs)
+
+
 def test_solver_iterations_override() -> None:
     env = Go2Z1Env(solver_iterations=8)
 
