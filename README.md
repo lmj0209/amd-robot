@@ -1,15 +1,21 @@
 # ROCm-Accelerated Quadruped Mobile Manipulation with MJX
 
-> **Status:** the engineering scaffold is ready; Gate G0 has not passed yet.
-> No dependency version, performance number, or success rate is a measured RGC
-> result until it is accompanied by a system fingerprint and raw evidence.
+> **Status:** Gates G0 and G1 have passed on one Radeon PRO W7900 with ROCm.
+> The fixed-near-field Push MVP has a reproducible successful rollout and
+> `20/20` task success in the current qualification batch. It is not yet
+> qualified against the strict maximum object-speed gate; see
+> [Measured Push result](#measured-push-result).
 
 ## Project
 
-A quadruped-with-arm robot learns to approach a randomized box and push it into
-a goal zone: **Approach → Align → Push → Hold**. The locked stack is MuJoCo MJX
-with its JAX implementation, a MuJoCo Playground-style environment, Brax PPO,
-and one AMD Radeon GPU through ROCm.
+A quadruped-with-arm robot learns to approach a box and push it into a goal
+zone: **Approach → Align → Push → Hold**. The locked stack is MuJoCo MJX with
+its JAX implementation, a MuJoCo Playground-style environment, Brax PPO, and
+one AMD Radeon GPU through ROCm.
+
+The current validated demonstration uses a fixed near-field box. A `±0.01 m`
+randomized-box candidate was rejected after an independent repeat, so the
+repository does not claim randomized-task qualification.
 
 The action contract is always 19-dimensional: 12 leg joints, 6 arm joints, and
 1 coupled gripper action. The Push MVP may mask the gripper but never changes
@@ -22,11 +28,11 @@ the policy interface.
 - `tests/` runs CPU-safe contract tests.
 - `scripts/smoke_test.py` is a fail-closed RGC Gate G0 check.
 - `scripts/system_info.py` creates immutable benchmark fingerprints.
+- `scripts/push_rollout_render.py` renders one deterministic Push rollout and
+  records every frame, phase transition, metric, seed, and artifact hash.
 - `assets/manifest.yaml` and `artifacts/manifest.json` track external files.
 
-The B2Piper model is preferred. If it does not pass the model gate by
-2026-07-20, the project switches to Go2 + Z1/gripper without changing the
-MJX/JAX/ROCm stack.
+The selected robot is Go2 + Z1/gripper. The B2Piper fallback is not maintained.
 
 ## Local contract tests
 
@@ -45,11 +51,17 @@ Do not install a generic JAX build over the RGC runtime. Follow
 the exact RGC image and GPU, then install the project without replacing it.
 
 ```bash
-python scripts/system_info.py \
+export HSA_OVERRIDE_GFX_VERSION=11.0.0
+export LLVM_PATH=/opt/rocm/llvm
+export HIP_DEVICE_LIB_PATH=/opt/rocm-7.2.1/lib/llvm/lib/clang/22/lib/amdgcn/bitcode
+export XLA_FLAGS="--xla_gpu_enable_command_buffer="
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+
+/workspace/.venv/bin/python scripts/system_info.py \
   --image-name TODO_FROM_RGC \
   --image-digest TODO_FROM_RGC \
   --config configs/smoke.yaml
-python scripts/smoke_test.py
+/workspace/.venv/bin/python scripts/smoke_test.py
 ```
 
 The smoke command returns 0 only if all of these pass:
@@ -61,10 +73,72 @@ The smoke command returns 0 only if all of these pass:
 
 `--skip-ppo` is diagnostic only and exits 2; it never passes Gate G0.
 
+## Measured Push result
+
+The current deterministic trained policy was evaluated on RGC with
+`seed=777`, 20 reset keys, 4,608 control steps per environment, and solver
+iterations 16:
+
+| Metric | Measured result |
+|---|---:|
+| Task success | `20/20` |
+| Object-speed gate exceedance (`>=0.5 m/s`) | `1/20` |
+| Object-speed p95 | `0.347126 m/s` |
+| Maximum object speed | `0.689896 m/s` |
+| Object-height range | `0.097265–0.110376 m` |
+| Abnormal / illegal / non-finite / saturation events | `0 / 0 / 0 / 0` |
+
+Solver iterations 16 reduced the maximum from `0.757749 m/s` at solver
+iterations 8, but it did not pass the pre-registered `<0.5 m/s` maximum gate.
+The result is therefore task-capability evidence, not a maximum-speed safety
+qualification. Numerical parameter search stopped after this comparison.
+
+## Reproduce one unedited rollout
+
+The policy parameter file is external to Git. The validated parameter SHA-256
+is:
+
+```text
+f033f9ff1ff23304b05ddeec9346d4f681ec5f4dbe265c5000804317916f9d0b
+```
+
+Render seed index 0 from the same 20-key pool:
+
+```bash
+export MUJOCO_GL=egl
+
+/workspace/.venv/bin/python scripts/push_rollout_render.py \
+  --config configs/push_stage2_near_field_solver16_qualification.yaml \
+  --params-in /path/to/push_nearfield_v3_params \
+  --output-dir /tmp/push-rollout \
+  --seed 777 \
+  --seed-pool-size 20 \
+  --seed-index 0 \
+  --num-steps 4608 \
+  --render-stride 5 \
+  --width 960 \
+  --height 540
+```
+
+The command refuses to overwrite an existing output directory. It writes JPEG
+frames plus `manifest.json`. At a 0.01 s control timestep and stride 5, encode
+the complete frame sequence at 20 fps:
+
+```bash
+ffmpeg -framerate 20 \
+  -i /tmp/push-rollout/frame_%06d.jpg \
+  -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart \
+  push-rollout.mp4
+```
+
+The measured rollout completed at step 4,060 with final goal error
+`0.079138 m`, maximum object speed `0.305667 m/s`, zero illegal/non-finite
+events, and 813 frames (`40.65 s`).
+
 ## Reproduction and results
 
 Environment locks, train/evaluate/benchmark commands, checkpoints, videos, and
-measured results are added only after their gates. See `docs/REPRODUCTION.md`.
+additional measured results are recorded in `docs/REPRODUCTION.md`.
 
 ## License
 
