@@ -453,8 +453,9 @@ def _push_determinism_audit(
         if trace_lists is None:
             raise RuntimeError("determinism audit did not sample any trace fields")
         trace = {
-            name: np.asarray(
-                jax.device_get(jnp.stack(values, axis=0))
+            name: np.stack(
+                [np.asarray(jax.device_get(value)) for value in values],
+                axis=0,
             )
             for name, values in trace_lists.items()
         }
