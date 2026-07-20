@@ -1,8 +1,10 @@
 """Runtime compatibility shims for the pinned ROCm / JAX / Brax stack.
 
-brax (0.14.2 and current main) calls ``jax.device_put_replicated``, which
-jax 0.10.x removed. We apply a drop-in based on the official jax pmap-migration
-guide so Brax PPO training runs.
+brax 0.14.2 calls ``jax.device_put_replicated``, which jax 0.10.x removed.
+We apply a drop-in based on the official jax pmap-migration guide so Brax PPO
+training runs. Brax main has an in-line replacement, but its default mesh axis
+does not match PPO's ``pmap`` axis; the proposed upstream patch in ``patches/``
+also removes that sharding transition.
 
 This shim is required for ALL Brax training on our pinned stack, and is the
 basis for a Brax upstream contribution (10-pt scoring item).

@@ -112,18 +112,22 @@ save/reload.
 
 ### gfx1100 engineering boundary
 
-On this RDNA3 stack, a large reverse-mode XLA graph containing contact-dense
-`mjx.step`, non-constant reward, and a fused Brax PPO scan can fail during GPU
-compilation. CPU execution and smaller GPU graphs established that the model,
-environment, reward, and PPO base path were valid. The accepted ROCm-first
-workaround is a host small-update loop with `training_scan=1`, complete
-training-state persistence, and bounded physics substeps. It retains the
-required MJX/Playground/Brax stack and uses the GPU for each compiled update;
-it does not switch the project to another simulator or algorithm.
+On this RDNA3 stack, historical diagnostic runs showed that a large
+reverse-mode XLA graph containing contact-dense `mjx.step`, non-constant reward,
+and a fused Brax PPO scan could terminate during GPU compilation. CPU execution
+and smaller GPU graphs established that the model, environment, reward, and PPO
+base path were valid. A later controlled 20,480-step, scan-80 rerun completed in
+123.317 seconds, so the historical compiler failure is not presented as a
+deterministic upstream reproducer. The accepted ROCm-first guardrail remains a
+host small-update loop with `training_scan=1`, complete training-state
+persistence, and bounded physics substeps.
 
-Large fused PPO scans remain outside the validated `gfx1100` boundary. A
-minimal upstream issue is a planned deliverable and is not claimed as merged
-work in this draft.
+A separate, deterministic Brax issue was isolated: the initial PPO
+`NamedSharding` uses a different mesh-axis name from its training `pmap`. The
+prepared patch makes the axes match, and a W7900 test measured `same=True`;
+two host calls took 8.857824 seconds for initial compilation and 0.004462
+seconds for reuse. The patch and regression test are included in `patches/`,
+but no upstream PR is claimed as opened or merged in this draft.
 
 ## 5. Task evaluation
 
@@ -260,7 +264,8 @@ in `THIRD_PARTY_NOTICES.md` and `assets/manifest.yaml`.
 5. Large fused reverse-mode PPO graphs are not validated on this gfx1100
    software stack.
 6. RGC did not expose the base image digest inside the instance.
-7. The upstream compiler report is planned but not yet filed.
+7. The Brax pmap-axis patch is prepared and tested but its upstream PR is not
+   yet opened.
 
 These items are release gates, not hidden follow-up optimizations.
 

@@ -209,6 +209,16 @@ to the measured rollout and benchmark evidence. The review-video renderer
 checks the decoded output frame count so the complete 813-frame rollout cannot
 be shortened silently.
 
+## Upstream contribution
+
+The prepared [Brax pmap-axis patch](patches/brax-main-pmap-axis.patch) makes
+PPO's initial `NamedSharding` use the same `i` mesh axis as its training
+`pmap`. The [PR draft and validation record](patches/brax-main-pmap-axis-pr.md)
+include the upstream base, prepared commit, CPU test, and single-W7900 ROCm
+results. The patch is ready for a contributor-account CLA check and fork push;
+this repository does not claim that the upstream PR has already been opened or
+merged.
+
 ## License
 
 Project code is MIT licensed. Third-party software, robot models, and assets are
