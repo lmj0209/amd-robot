@@ -20,6 +20,15 @@ def test_push_scene_has_physical_box_and_noncontact_task_markers():
     box_body_id = _id(model, mujoco.mjtObj.mjOBJ_BODY, "push_box_body")
     box_joint_id = _id(model, mujoco.mjtObj.mjOBJ_JOINT, "push_box_joint")
     box_geom_id = _id(model, mujoco.mjtObj.mjOBJ_GEOM, "push_box")
+    push_pad_ids = [
+        _id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
+        for name in (
+            "push_pad_stator_left",
+            "push_pad_stator_right",
+            "push_pad_mover_left",
+            "push_pad_mover_right",
+        )
+    ]
     push_key_id = _id(model, mujoco.mjtObj.mjOBJ_KEY, "push_home")
     end_effector_site_id = _id(model, mujoco.mjtObj.mjOBJ_SITE, "z1_ee")
     push_contact_site_id = _id(
@@ -34,6 +43,10 @@ def test_push_scene_has_physical_box_and_noncontact_task_markers():
     assert model.jnt_type[box_joint_id] == mujoco.mjtJoint.mjJNT_FREE
     assert model.body_jntnum[box_body_id] == 1
     assert model.geom_bodyid[box_geom_id] == box_body_id
+    assert all(
+        model.geom_type[geom_id] == mujoco.mjtGeom.mjGEOM_BOX
+        for geom_id in push_pad_ids
+    )
     assert model.site_bodyid[push_contact_site_id] == box_body_id
     assert model.site_bodyid[prepush_site_id] == box_body_id
     assert model.site_bodyid[goal_site_id] == 0

@@ -19,6 +19,12 @@ PUSH_HOME_KEYFRAME = "push_home"
 PUSH_BOX_BODY_NAME = "push_box_body"
 PUSH_BOX_JOINT_NAME = "push_box_joint"
 PUSH_BOX_GEOM_NAME = "push_box"
+PUSH_PAD_GEOM_NAMES = (
+    "push_pad_stator_left",
+    "push_pad_stator_right",
+    "push_pad_mover_left",
+    "push_pad_mover_right",
+)
 END_EFFECTOR_SITE_NAME = "z1_ee"
 PUSH_CONTACT_SITE_NAME = "push_contact_site"
 PREPUSH_SITE_NAME = "prepush_site"
@@ -78,6 +84,7 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         object_position_x_offset_range: Sequence[float] = (0.0, 0.0),
         object_position_y_offset_range: Sequence[float] = (0.0, 0.0),
         push_box_solref_timeconst: float | None = None,
+        push_pad_solref_timeconst: float | None = None,
         **kwargs,
     ) -> None:
         if approach_stop_distance <= 0.0:
@@ -121,6 +128,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("task cost scales must be non-negative")
         if push_box_solref_timeconst is not None and push_box_solref_timeconst <= 0.0:
             raise ValueError("push box solref time constant must be positive")
+        if push_pad_solref_timeconst is not None and push_pad_solref_timeconst <= 0.0:
+            raise ValueError("push pad solref time constant must be positive")
         for axis, offset_range in (
             ("x", object_position_x_offset_range),
             ("y", object_position_y_offset_range),
@@ -205,10 +214,23 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         self._box_geom_id = self._required_id(
             mujoco.mjtObj.mjOBJ_GEOM, PUSH_BOX_GEOM_NAME
         )
+        self._push_pad_geom_ids = tuple(
+            self._required_id(mujoco.mjtObj.mjOBJ_GEOM, name)
+            for name in PUSH_PAD_GEOM_NAMES
+        )
+        contact_model_changed = False
         if push_box_solref_timeconst is not None:
             self.mj_model.geom_solref[self._box_geom_id, 0] = float(
                 push_box_solref_timeconst
             )
+            contact_model_changed = True
+        if push_pad_solref_timeconst is not None:
+            for geom_id in self._push_pad_geom_ids:
+                self.mj_model.geom_solref[geom_id, 0] = float(
+                    push_pad_solref_timeconst
+                )
+            contact_model_changed = True
+        if contact_model_changed:
             self._mjx_model = mjx.put_model(self.mj_model, impl="jax")
         self._end_effector_site_id = self._required_id(
             mujoco.mjtObj.mjOBJ_SITE, END_EFFECTOR_SITE_NAME

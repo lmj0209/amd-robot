@@ -254,7 +254,6 @@
                     <joint name="joint6" axis="1 0 0" range="-2.79253 2.79253" />
                     <geom class="z1_visual" mesh="z1_Link06" />
                     <geom size="0.0255 1e-06" pos="0.0255 0 0" quat="1 0 1 0" class="z1_collision" />
-                    <site name="z1_ee" pos="0.186 0.0 -0.009" size="0.012" rgba="1 0.85 0.1 0.8" group="1" />
                     <geom pos="0.051 0 0" type="mesh" mesh="z1_GripperStator" class="z1_visual" />
                     <geom class="z1_gripper_stator_collision" mesh="z1_GripperStator_col_1" contype="0" conaffinity="0" />
                     <geom class="z1_gripper_stator_collision" mesh="z1_GripperStator_col_2" contype="0" conaffinity="0" />
@@ -262,8 +261,8 @@
                     <geom class="z1_gripper_stator_collision" mesh="z1_GripperStator_col_4" contype="0" conaffinity="0" />
                     <geom class="z1_gripper_stator_collision" mesh="z1_GripperStator_col_5" contype="0" conaffinity="0" />
                     <geom class="z1_gripper_stator_collision" mesh="z1_GripperStator_col_6" contype="0" conaffinity="0" />
-                    <geom class="z1_gripper_stator_pad_collision_1" />
-                    <geom class="z1_gripper_stator_pad_collision_2" />
+                    <geom class="z1_gripper_stator_pad_collision_1" name="push_pad_stator_left" />
+                    <geom class="z1_gripper_stator_pad_collision_2" name="push_pad_stator_right" />
                     <body name="gripperMover" pos="0.1 0 0">
                       <inertial pos="0.0132063 0.00476708 0.00380534" quat="0.0631093 0.669067 -0.0615783 0.737953" mass="0.276213" diaginertia="0.000359044 0.000270888 0.000172378" />
                       <joint name="jointGripper" axis="0 1 0" range="-1.51844 0" />
@@ -273,9 +272,10 @@
                       <geom class="z1_gripper_mover_collision" mesh="z1_GripperMover_col_3" contype="0" conaffinity="0" />
                       <geom class="z1_gripper_mover_collision" mesh="z1_GripperMover_col_4" contype="0" conaffinity="0" />
                       <geom class="z1_gripper_mover_collision" mesh="z1_GripperMover_col_5" contype="0" conaffinity="0" />
-                      <geom class="z1_gripper_mover_pad_collision_1" />
-                      <geom class="z1_gripper_mover_pad_collision_2" />
+                      <geom class="z1_gripper_mover_pad_collision_1" name="push_pad_mover_left" />
+                      <geom class="z1_gripper_mover_pad_collision_2" name="push_pad_mover_right" />
                     </body>
+                    <site name="z1_ee" pos="0.186 0.0 -0.009" size="0.012" rgba="1 0.85 0.1 0.8" group="1" />
                   </body>
                 </body>
               </body>

@@ -276,6 +276,29 @@ def test_push_box_contact_time_constant_must_be_positive():
         Go2Z1PushEnv(push_box_solref_timeconst=0.0)
 
 
+def test_push_pad_contact_time_constant_preserves_box_and_floor():
+    env = Go2Z1PushEnv(push_pad_solref_timeconst=0.04)
+    floor_id = mujoco.mj_name2id(
+        env.mj_model,
+        mujoco.mjtObj.mjOBJ_GEOM,
+        "floor",
+    )
+
+    for geom_id in env._push_pad_geom_ids:
+        assert env.mj_model.geom_solref[geom_id, 0] == pytest.approx(0.04)
+        assert env.mj_model.geom_solref[geom_id, 1] == pytest.approx(1.0)
+    assert env.mj_model.geom_solref[env._box_geom_id, 0] == pytest.approx(0.02)
+    assert env.mj_model.geom_solref[floor_id, 0] == pytest.approx(0.02)
+
+
+def test_push_pad_contact_time_constant_must_be_positive():
+    with pytest.raises(
+        ValueError,
+        match="push pad solref time constant must be positive",
+    ):
+        Go2Z1PushEnv(push_pad_solref_timeconst=0.0)
+
+
 def test_push_task_reward_is_phase_gated_and_bounded():
     env = Go2Z1PushEnv()
     previous = env.reset(jax.random.PRNGKey(0))

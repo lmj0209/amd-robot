@@ -560,6 +560,52 @@ def test_push_position_x_contact_soft040_changes_only_box_contact() -> None:
     assert contact_soft_reward == phase_entry_reward
 
 
+def test_push_position_x_pad_soft040_changes_only_pad_contact() -> None:
+    phase_entry = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_phase_entry035_qualification.yaml"
+        ).read_text()
+    )
+    pad_soft = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align85_"
+                "phase_entry035_pad_soft040_qualification.yaml"
+            )
+        ).read_text()
+    )
+
+    assert pad_soft["status"] == (
+        "push_stage2_position_x_1cm_align85_"
+        "phase_entry035_pad_soft040_qualification"
+    )
+    assert pad_soft["push"]["push_pad_solref_timeconst"] == 0.04
+    for section in (
+        "environment",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert pad_soft[section] == phase_entry[section]
+
+    phase_entry_push = dict(phase_entry["push"])
+    pad_soft_push = dict(pad_soft["push"])
+    pad_soft_push.pop("push_pad_solref_timeconst")
+    assert pad_soft_push == phase_entry_push
+
+    phase_entry_reward = dict(phase_entry["reward"])
+    pad_soft_reward = dict(pad_soft["reward"])
+    phase_entry_reward.pop("profile")
+    pad_soft_reward.pop("profile")
+    assert pad_soft_reward == phase_entry_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 

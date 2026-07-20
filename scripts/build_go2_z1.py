@@ -79,6 +79,12 @@ END_EFFECTOR_LOCAL_POS = (0.186, 0.0, -0.009)
 PUSH_BOX_BODY_NAME = "push_box_body"
 PUSH_BOX_JOINT_NAME = "push_box_joint"
 PUSH_BOX_GEOM_NAME = "push_box"
+PUSH_PAD_GEOM_NAMES_BY_CLASS = {
+    "z1_gripper_stator_pad_collision_1": "push_pad_stator_left",
+    "z1_gripper_stator_pad_collision_2": "push_pad_stator_right",
+    "z1_gripper_mover_pad_collision_1": "push_pad_mover_left",
+    "z1_gripper_mover_pad_collision_2": "push_pad_mover_right",
+}
 PUSH_CONTACT_SITE_NAME = "push_contact_site"
 PUSH_CONTACT_LOCAL_POS = (-0.105, 0.0, 0.0)
 PREPUSH_SITE_NAME = "prepush_site"
@@ -86,7 +92,7 @@ GOAL_SITE_NAME = "goal_site"
 PUSH_KEYFRAME_NAME = "push_home"
 PUSH_SOLVER_ITERATIONS = 8
 PUSH_BOX_INITIAL_POS = (0.8, 0.0, 0.1)
-PREPUSH_POS = (0.5, 0.0, 0.015)
+PREPUSH_LOCAL_POS = (-0.3, 0.0, -0.085)
 GOAL_POS = (1.2, 0.0, 0.005)
 
 # Placeholder carry pose: Z1 stator welded on top of the trunk, arm reaching
@@ -168,6 +174,18 @@ def _deepcopy(el: ET.Element) -> ET.Element:
     return ET.fromstring(ET.tostring(el))
 
 
+def _write_xml_lf(
+    root: ET.Element,
+    path: Path,
+    *,
+    final_newline: bool,
+) -> None:
+    """Write deterministic UTF-8 XML with LF endings on every host OS."""
+    payload = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    payload = payload.replace(b"\r\n", b"\n")
+    path.write_bytes(payload + (b"\n" if final_newline else b""))
+
+
 def _rewrite_file_paths(asset_el: ET.Element, robot_dir: str, meshdir: str) -> None:
     """Point each asset file at its menagerie dir, relative to go2_z1/."""
     prefix = f"../{robot_dir}/{meshdir}/" if meshdir else f"../{robot_dir}/"
@@ -245,6 +263,14 @@ def build() -> ET.Element:
         raise SystemExit(
             f"Z1 end-effector body '{END_EFFECTOR_BODY_NAME}' not found"
         )
+    named_push_pad_classes = set()
+    for geom in end_effector_body.iter("geom"):
+        class_name = geom.get("class")
+        if class_name in PUSH_PAD_GEOM_NAMES_BY_CLASS:
+            geom.set("name", PUSH_PAD_GEOM_NAMES_BY_CLASS[class_name])
+            named_push_pad_classes.add(class_name)
+    if named_push_pad_classes != set(PUSH_PAD_GEOM_NAMES_BY_CLASS):
+        raise SystemExit("Z1 primitive gripper push pads are incomplete")
     ET.SubElement(
         end_effector_body,
         "site",
@@ -364,12 +390,12 @@ def build_push_scene() -> ET.Element:
         },
     )
     ET.SubElement(
-        worldbody,
+        box,
         "site",
         {
             "name": PREPUSH_SITE_NAME,
             "type": "cylinder",
-            "pos": " ".join(map(str, PREPUSH_POS)),
+            "pos": " ".join(map(str, PREPUSH_LOCAL_POS)),
             "size": "0.045 0.003",
             "rgba": "0.15 0.45 1 0.45",
         },
@@ -534,7 +560,10 @@ def audit(
             model.key_qpos[push_key_id, box_qpos_adr : box_qpos_adr + 7],
             (*PUSH_BOX_INITIAL_POS, 1.0, 0.0, 0.0, 0.0),
         )
-        assert np.allclose(model.site_pos[prepush_site_id], PREPUSH_POS)
+        assert np.allclose(
+            model.site_pos[prepush_site_id], PREPUSH_LOCAL_POS
+        )
+        assert model.site_bodyid[prepush_site_id] == box_body_id
         assert np.allclose(model.site_pos[goal_site_id], GOAL_POS)
         assert np.allclose(
             model.site_pos[push_contact_site_id], PUSH_CONTACT_LOCAL_POS
@@ -557,19 +586,13 @@ def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     merged = build()
     ET.indent(merged, space="  ")
-    ET.ElementTree(merged).write(OUT_XML, encoding="utf-8", xml_declaration=True)
-    # Keep the committed generated asset POSIX-text friendly and make its
-    # manifest hash independent of the editor used to inspect it.
-    with OUT_XML.open("ab") as output:
-        output.write(b"\n")
+    _write_xml_lf(merged, OUT_XML, final_newline=True)
     scene = build_scene()
     ET.indent(scene, space="  ")
-    ET.ElementTree(scene).write(OUT_SCENE_XML, encoding="utf-8", xml_declaration=True)
+    _write_xml_lf(scene, OUT_SCENE_XML, final_newline=False)
     push_scene = build_push_scene()
     ET.indent(push_scene, space="  ")
-    ET.ElementTree(push_scene).write(
-        OUT_PUSH_SCENE_XML, encoding="utf-8", xml_declaration=True
-    )
+    _write_xml_lf(push_scene, OUT_PUSH_SCENE_XML, final_newline=True)
     print(f"wrote {OUT_XML.relative_to(REPO_ROOT)}")
     print(f"wrote {OUT_SCENE_XML.relative_to(REPO_ROOT)}")
     print(f"wrote {OUT_PUSH_SCENE_XML.relative_to(REPO_ROOT)}")

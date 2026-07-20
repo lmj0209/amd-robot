@@ -27,11 +27,12 @@ assets:
     source: derived from unitree_go2 + unitree_z1 by scripts/build_go2_z1.py
     license: BSD-3-Clause             # inherits BSD-3 from Go2/Z1 menagerie assets
     redistribution: allowed
-    files: [go2_z1.xml, scene_mjx.xml]
+    files: [go2_z1.xml, scene_mjx.xml, scene_push_mjx.xml]
     repository_path: assets/menagerie/go2_z1
     sha256:
-      go2_z1.xml: e0986f9e851d8ef723d712b32ae171e6cdb27f614850043fc3f4dfecbffafbcc
+      go2_z1.xml: c03d3d47caef629bd11e11fb68bf1533e4409158988f59fe5682aebd23ca718f
       scene_mjx.xml: d5735f1e210a7371bf0c7c92a09635e37f87fa34f6d51d970111f69098da8325
+      scene_push_mjx.xml: 2f010eafb350c91fd95b507ba8213d46a47f8823dbffb82cdb3b63a4665db6ff
 
   - id: b2_piper
     role: stretch_robot               # only if time allows after MVP
