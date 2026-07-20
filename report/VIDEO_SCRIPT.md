@@ -1,0 +1,103 @@
+# Four-minute submission video
+
+Target duration: 4:00. Candidate review render: English on-screen text plus the
+complete unedited simulation rollout. Optional narration below may be recorded
+later; it must not replace or cover the measured on-screen limitations.
+
+| Time | Visual | On-screen message |
+|---|---|---|
+| 0:00-0:15 | Title and final rollout frame | ROCm-Accelerated Quadruped Mobile Manipulation with MJX |
+| 0:15-0:35 | Problem statement and Push frame | Clear a near-field obstruction: Approach, Align, Push, Hold |
+| 0:35-1:00 | Architecture diagram | MJX physics -> Playground-style environment -> Brax PPO -> ROCm evidence |
+| 1:00-1:20 | AMD engineering card | One W7900; fixed 19D action; gfx1100-safe host small-update loop |
+| 1:20-2:01 | Complete 40.65 s rollout | Unedited seed 777, pool 20, index 0 |
+| 2:01-2:25 | Evaluation table | 20/20 task success; 1/20 speed exceedance; no safety-qualification claim |
+| 2:25-2:50 | Benchmark chart | 7,404 combined transitions/s at practical batch 2,048 |
+| 2:50-3:10 | Training card | 73,728 transitions; exact checkpoint scope; final KL and policy std |
+| 3:10-3:30 | Reproduction card | Versioned config, seed, hashes, renderer, fail-closed benchmark |
+| 3:30-3:50 | Limitations card | Fixed box only; no perception/sim-to-real; randomized candidate rejected |
+| 3:50-4:00 | Closing frame | Physical AI on Radeon + ROCm, with measured evidence |
+
+## Optional narration
+
+### 0:00-0:15
+
+This is a ROCm-accelerated physical AI project for AMD Robot Competition
+Track 3. A Go2 quadruped with a Z1 arm moves a box into a target zone.
+
+### 0:15-0:35
+
+The scoped application is simple warehouse obstruction clearing. The robot
+must approach a fixed near-field box, align, push it toward the goal, and hold
+it within eight centimeters for one hundred control steps.
+
+### 0:35-1:00
+
+MuJoCo MJX owns dynamics and contact. A Playground-style environment owns
+observations, phase logic, reward, termination, and metrics. Brax owns PPO.
+ROCm utilities validate the backend and synchronize every benchmark. The
+interface remains nineteen actions: twelve legs, six arm joints, and one
+gripper.
+
+### 1:00-1:20
+
+All measured GPU work uses one Radeon PRO W7900 with ROCm 7.2.1. Large fused
+reverse-mode graphs were unstable on gfx1100, so training uses a bounded
+host small-update loop with complete learner and rollout state persistence.
+This keeps MJX and Brax PPO on the required AMD stack.
+
+### 1:20-2:01
+
+This is the complete rendered rollout: seed seven-seven-seven, index zero
+from a twenty-key pool. No frames were removed. The policy reaches Hold at
+step three thousand nine hundred sixty-one and completes at step four
+thousand sixty.
+
+### 2:01-2:25
+
+Across twenty measured fixed-box episodes, task success was twenty out of
+twenty. One episode exceeded the pre-registered point-five meter-per-second
+object-speed limit. Therefore this is task-capability evidence, not strict
+safety qualification. Abnormal, illegal-contact, non-finite, and saturation
+counts were all zero.
+
+### 2:25-2:50
+
+The formal benchmark used fresh processes, separate cold compilation, ten
+warmups, and synchronized repeats. Combined policy and MJX throughput reached
+seven thousand four hundred four transitions per second at batch two
+thousand forty-eight. Batch four thousand ninety-six was only three percent
+faster but used much more compile time and memory.
+
+### 2:50-3:10
+
+The selected Push run generated seventy-three thousand seven hundred
+twenty-eight transitions. Exact resumes include parameters, optimizer,
+rollout state, and both random-number states. The final reused host call
+reported three hundred eighty-three SPS and finite optimization metrics.
+
+### 3:10-3:30
+
+Reproduction is based on versioned YAML, explicit seeds, parameter and video
+hashes, a renderer that records every frame, and benchmark scripts that fail
+on the wrong backend or non-finite output.
+
+### 3:30-3:50
+
+The present boundary is equally important: fixed near-field placement,
+state-based simulation, no real-robot transfer, and no safety certificate.
+A randomized-box candidate failed its registered gates, and the hundred-
+episode expansion was intentionally paused.
+
+### 3:50-4:00
+
+The result is an auditable mobile-manipulation MVP and a measured ROCm path
+for contact-rich physical AI on Radeon.
+
+## Final-edit checklist
+
+- Add verified team name and member credits.
+- Record narration only if the exact measured claims remain unchanged.
+- Keep the complete 813-frame rollout segment intact.
+- Do not remove the `1/20` speed-exceedance disclosure.
+- Verify the final MP4 by decoding every frame and record its SHA-256.

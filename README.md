@@ -201,6 +201,14 @@ python scripts/aggregate_rocm_benchmark.py \
 Environment locks, train/evaluate/benchmark commands, checkpoints, videos, and
 additional measured results are recorded in `docs/REPRODUCTION.md`.
 
+## Submission materials
+
+The English [technical report](report/TECHNICAL_REPORT.md) and
+[four-minute video script](report/VIDEO_SCRIPT.md) bind every submission claim
+to the measured rollout and benchmark evidence. The review-video renderer
+checks the decoded output frame count so the complete 813-frame rollout cannot
+be shortened silently.
+
 ## License
 
 Project code is MIT licensed. Third-party software, robot models, and assets are
