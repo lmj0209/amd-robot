@@ -702,6 +702,58 @@ def test_push_position_x_arm_compliance500_changes_only_arm_pd() -> None:
     assert arm_compliance_reward == phase_entry_reward
 
 
+def test_push_position_x_compliant_arm_align90_changes_only_align_gate() -> None:
+    arm_compliance = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align85_"
+                "phase_entry035_arm_compliance_qualification.yaml"
+            )
+        ).read_text()
+    )
+    align90 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align90_"
+                "phase_entry035_arm_compliance_qualification.yaml"
+            )
+        ).read_text()
+    )
+
+    assert align90["status"] == (
+        "push_stage2_position_x_1cm_align90_"
+        "phase_entry035_arm_compliance_qualification"
+    )
+    assert align90["environment"]["arm_kp"] == 300.0
+    assert align90["environment"]["arm_kd"] == 30.0
+    assert align90["push"]["align_distance_threshold"] == 0.09
+    for section in (
+        "environment",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert align90[section] == arm_compliance[section]
+
+    arm_compliance_push = dict(arm_compliance["push"])
+    align90_push = dict(align90["push"])
+    arm_compliance_push.pop("align_distance_threshold")
+    align90_push.pop("align_distance_threshold")
+    assert align90_push == arm_compliance_push
+
+    arm_compliance_reward = dict(arm_compliance["reward"])
+    align90_reward = dict(align90["reward"])
+    arm_compliance_reward.pop("profile")
+    align90_reward.pop("profile")
+    assert align90_reward == arm_compliance_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 
