@@ -5,6 +5,7 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import mujoco
+import pytest
 
 from amd_robo.envs.go2_z1 import FOOT_GEOM_NAMES, Go2Z1Env
 from amd_robo.envs.protocol import ProjectMjxEnv
@@ -30,6 +31,30 @@ def test_leg_pd_override_preserves_the_actuator_contract() -> None:
     assert jnp.allclose(env.mj_model.actuator_biasprm[:12, 1], -40.0)
     assert jnp.allclose(env.mj_model.actuator_biasprm[:12, 2], -8.0)
     assert env.mj_model.actuator_gainprm[12, 0] == 1000.0
+
+
+def test_arm_pd_override_preserves_legs_and_gripper() -> None:
+    env = Go2Z1Env(arm_kp=300.0, arm_kd=30.0)
+
+    assert jnp.allclose(env.mj_model.actuator_gainprm[:12, 0], 50.0)
+    assert jnp.allclose(env.mj_model.actuator_gainprm[12:18, 0], 300.0)
+    assert jnp.allclose(env.mj_model.actuator_biasprm[12:18, 1], -300.0)
+    assert jnp.allclose(env.mj_model.actuator_biasprm[12:18, 2], -30.0)
+    assert env.mj_model.actuator_gainprm[18, 0] == 1000.0
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"arm_kp": 0.0}, "arm_kp must be positive"),
+        ({"arm_kd": -1.0}, "arm_kd must be non-negative"),
+    ],
+)
+def test_arm_pd_override_rejects_invalid_values(
+    kwargs: dict[str, float], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        Go2Z1Env(**kwargs)
 
 
 def test_solver_iterations_override() -> None:

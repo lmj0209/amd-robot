@@ -606,6 +606,54 @@ def test_push_position_x_pad_soft040_changes_only_pad_contact() -> None:
     assert pad_soft_reward == phase_entry_reward
 
 
+def test_push_position_x_arm_compliance_changes_only_arm_pd() -> None:
+    phase_entry = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_position_x_1cm_align85_phase_entry035_qualification.yaml"
+        ).read_text()
+    )
+    arm_compliance = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / (
+                "push_stage2_position_x_1cm_align85_"
+                "phase_entry035_arm_compliance_qualification.yaml"
+            )
+        ).read_text()
+    )
+
+    assert arm_compliance["status"] == (
+        "push_stage2_position_x_1cm_align85_"
+        "phase_entry035_arm_compliance_qualification"
+    )
+    assert arm_compliance["environment"]["arm_kp"] == 300.0
+    assert arm_compliance["environment"]["arm_kd"] == 30.0
+    for section in (
+        "push",
+        "curriculum",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert arm_compliance[section] == phase_entry[section]
+
+    phase_entry_environment = dict(phase_entry["environment"])
+    arm_compliance_environment = dict(arm_compliance["environment"])
+    arm_compliance_environment.pop("arm_kp")
+    arm_compliance_environment.pop("arm_kd")
+    assert arm_compliance_environment == phase_entry_environment
+
+    phase_entry_reward = dict(phase_entry["reward"])
+    arm_compliance_reward = dict(arm_compliance["reward"])
+    phase_entry_reward.pop("profile")
+    arm_compliance_reward.pop("profile")
+    assert arm_compliance_reward == phase_entry_reward
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 

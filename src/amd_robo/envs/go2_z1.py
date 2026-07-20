@@ -62,6 +62,8 @@ class Go2Z1Env(MjxEnv):
         action_scale: float = 0.25,
         leg_kp: float | None = None,
         leg_kd: float | None = None,
+        arm_kp: float | None = None,
+        arm_kd: float | None = None,
         solver_iterations: int | None = None,
         home_keyframe: str | None = "home",
         tilt_limit_deg: float = 60.0,
@@ -84,6 +86,15 @@ class Go2Z1Env(MjxEnv):
             if leg_kd < 0.0:
                 raise ValueError("leg_kd must be non-negative")
             self._mj_model.actuator_biasprm[:12, 2] = -leg_kd
+        if arm_kp is not None:
+            if arm_kp <= 0.0:
+                raise ValueError("arm_kp must be positive")
+            self._mj_model.actuator_gainprm[12:18, 0] = arm_kp
+            self._mj_model.actuator_biasprm[12:18, 1] = -arm_kp
+        if arm_kd is not None:
+            if arm_kd < 0.0:
+                raise ValueError("arm_kd must be non-negative")
+            self._mj_model.actuator_biasprm[12:18, 2] = -arm_kd
         if foot_condim is not None:
             if foot_condim not in (1, 3, 4, 6):
                 raise ValueError(

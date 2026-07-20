@@ -60,6 +60,8 @@ def _make_env(
         action_scale=environment.get("action_scale", 0.25),
         leg_kp=environment.get("leg_kp"),
         leg_kd=environment.get("leg_kd"),
+        arm_kp=environment.get("arm_kp"),
+        arm_kd=environment.get("arm_kd"),
         foot_condim=environment["foot_condim"],
         bound_observations=environment["bounded_observations"],
         command_x_range=environment["command_x_range"],
