@@ -50,7 +50,13 @@ CSV_FIELDS = (
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-dir", type=Path, required=True)
+    parser.add_argument(
+        "--input-dir",
+        action="append",
+        type=Path,
+        required=True,
+        help="Benchmark directory; repeat for separate GPU and CPU evidence.",
+    )
     parser.add_argument("--output-csv", type=Path, required=True)
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--expected-commit")
@@ -173,9 +179,14 @@ def _write_csv(path: Path, results: list[dict[str, Any]]) -> None:
 
 def main() -> int:
     args = _parse_args()
-    if not args.input_dir.is_dir():
-        raise ValueError(f"input directory not found: {args.input_dir}")
-    log_paths = sorted(args.input_dir.glob("*.log"))
+    missing_dirs = [path for path in args.input_dir if not path.is_dir()]
+    if missing_dirs:
+        raise ValueError(f"input directories not found: {missing_dirs}")
+    log_paths = sorted(
+        log_path
+        for input_dir in args.input_dir
+        for log_path in input_dir.glob("*.log")
+    )
     results = [
         _result_from_log(path, args.expected_commit)
         for path in log_paths
