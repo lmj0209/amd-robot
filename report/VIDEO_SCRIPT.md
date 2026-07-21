@@ -6,6 +6,13 @@ from this script with English on-screen text plus the complete unedited
 simulation rollout. Optional narration below may be recorded later; it must
 not replace or cover the measured on-screen limitations.
 
+Review status: a corrected silent v3 candidate was rendered from commit
+`a40fa8a18dfb6f9b04b861fb70386c9d380408c7`. It contains 4,793 decoded frames
+over 239.65 seconds, including all 813 rollout frames. Its SHA-256 is
+`1bcde63c694df3e46809dcf6b3b0ad5177557ad096dcf5cec1dfc6f84c4354bd`.
+Team credits, the final audio decision, and public artifact links still need
+to be supplied before public submission.
+
 | Time | Visual | On-screen message |
 |---|---|---|
 | 0:00-0:15 | Title and final rollout frame | ROCm-Accelerated Quadruped Mobile Manipulation with MJX |
