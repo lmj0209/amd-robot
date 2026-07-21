@@ -220,13 +220,13 @@ be shortened silently.
 
 ## Upstream contribution
 
-The prepared [Brax pmap-axis patch](patches/brax-main-pmap-axis.patch) makes
-PPO's initial `NamedSharding` use the same `i` mesh axis as its training
-`pmap`. The [PR draft and validation record](patches/brax-main-pmap-axis-pr.md)
-include the upstream base, prepared commit, CPU test, and single-W7900 ROCm
-results. The patch is ready for a contributor-account CLA check and fork push;
-this repository does not claim that the upstream PR has already been opened or
-merged.
+The public [Brax PR #674](https://github.com/google/brax/pull/674) makes PPO's
+initial `NamedSharding` use the same `i` mesh axis as its training `pmap`.
+The stored [patch](patches/brax-main-pmap-axis.patch) and
+[validation record](patches/brax-main-pmap-axis-pr.md) include the upstream
+base, submitted commit, CPU test, and single-W7900 ROCm results. The Google CLA
+and automated change check passed after the PR was opened on July 21, 2026. It
+is awaiting maintainer review and is not claimed as accepted or merged.
 
 ## License
 

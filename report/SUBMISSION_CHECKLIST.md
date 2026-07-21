@@ -29,8 +29,8 @@ private resource or publish it without an explicit access decision.
 - [x] Disclose fixed near-field, state-based simulation scope.
 - [x] Do not claim randomized-box, perception, sim-to-real, or hardware safety
   qualification.
-- [x] Keep the optional upstream PR marked paused unless the author explicitly
-  resumes it.
+- [x] Record the explicitly resumed upstream contribution as public Brax PR
+  #674, with CLA/check success and without claiming acceptance or merge.
 
 ## Final media gate
 

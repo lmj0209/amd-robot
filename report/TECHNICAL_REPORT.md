@@ -123,11 +123,13 @@ host small-update loop with `training_scan=1`, complete training-state
 persistence, and bounded physics substeps.
 
 A separate, deterministic Brax issue was isolated: the initial PPO
-`NamedSharding` uses a different mesh-axis name from its training `pmap`. The
-prepared patch makes the axes match, and a W7900 test measured `same=True`;
-two host calls took 8.857824 seconds for initial compilation and 0.004462
-seconds for reuse. The patch and regression test are included in `patches/`,
-but no upstream PR is claimed as opened or merged in this draft.
+`NamedSharding` uses a different mesh-axis name from its training `pmap`.
+[Brax PR #674](https://github.com/google/brax/pull/674) makes the axes match,
+and a W7900 test measured `same=True`; two host calls took 8.857824 seconds for
+initial compilation and 0.004462 seconds for reuse. The submitted patch and
+regression test are included in `patches/`. The Google CLA and automated change
+check passed after the PR was opened on July 21, 2026; it is awaiting
+maintainer review and is not claimed as accepted or merged.
 
 ## 5. Task evaluation
 
@@ -271,8 +273,7 @@ in `THIRD_PARTY_NOTICES.md` and `assets/manifest.yaml`.
 5. Large fused reverse-mode PPO graphs are not validated on this gfx1100
    software stack.
 6. RGC did not expose the base image digest inside the instance.
-7. The Brax pmap-axis patch is prepared and tested but its upstream PR is not
-   yet opened.
+7. Brax PR #674 is public and tested but is awaiting upstream maintainer review.
 
 These items are release gates, not hidden follow-up optimizations.
 
