@@ -15,7 +15,7 @@
 The account owner must create and verify these public URLs. Do not replace a
 private resource or publish it without an explicit access decision.
 
-- [ ] Public source repository URL: `TBD`
+- [x] Public source repository URL: <https://github.com/lmj0209/amd-robot>
 - [ ] Public four-minute video URL: `TBD`
 - [ ] Public checkpoint or artifact URL: `TBD`
 - [ ] Verify each URL in a signed-out browser session.
