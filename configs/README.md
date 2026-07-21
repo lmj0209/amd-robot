@@ -12,6 +12,13 @@ and RGC system fingerprint.
 - `locomotion.yaml`: current Phase-2 forward-velocity curriculum. The arm and
   gripper remain masked at their home controls while the policy keeps the
   frozen 19-dimensional action interface.
+- `push_stage2_near_field_solver16_governor_qualification.yaml`: rejected O2
+  diagnostic that filters the executed Push command between `0.10` and
+  `0.20 m/s` object speed. It passed measured speed limits but changed trained
+  success across fresh processes, so it is not a continuation source.
+- `push_stage2_near_field_solver16_governor025_qualification.yaml`: rejected
+  single-variable diagnostic that changes only the governor stop speed to
+  `0.25 m/s`. It did not reach Hold and is not a continuation source.
 - `locomotion_stage1_low_speed.yaml`: the first `0.1 m/s` qualification slice
   of the staged `0.1 -> 0.2 -> 0.4 m/s` command curriculum. It resumes the
   complete accepted v14 training session.

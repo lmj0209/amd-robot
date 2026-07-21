@@ -63,6 +63,14 @@ speed, and optionally object acceleration. This is a controller change, not a
 solver or threshold change. The first target is zero speed-gate exceedances in
 20 fixed episodes without reducing task success.
 
+The first implementation (`aaf0986`) filtered the executed command from full
+at `0.10 m/s` object speed to zero at `0.20 m/s`, while preserving the policy's
+requested `0.025 m/s` observation. It passed the speed gate in every measured
+single-environment run, but a fresh-process trained A/B pair changed from
+success to a Push-phase failure. It is rejected under the O1 discrete-stability
+rule. No PPO training or randomized evaluation is authorized from this
+controller; fixed-v3 without the governor remains the candidate.
+
 ### O3: randomization
 
 Increase object-x randomization through 0.002 m, 0.005 m, and 0.010 m ranges.

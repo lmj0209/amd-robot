@@ -1,8 +1,10 @@
 # Four-minute submission video
 
-Target duration: 4:00. Candidate review render: English on-screen text plus the
-complete unedited simulation rollout. Optional narration below may be recorded
-later; it must not replace or cover the measured on-screen limitations.
+Target duration: 4:00. The previous review render is withdrawn because its
+batched evaluation card is no longer qualification evidence. Regenerate it
+from this script with English on-screen text plus the complete unedited
+simulation rollout. Optional narration below may be recorded later; it must
+not replace or cover the measured on-screen limitations.
 
 | Time | Visual | On-screen message |
 |---|---|---|
@@ -11,7 +13,7 @@ later; it must not replace or cover the measured on-screen limitations.
 | 0:35-1:00 | Architecture diagram | MJX physics -> Playground-style environment -> Brax PPO -> ROCm evidence |
 | 1:00-1:20 | AMD engineering card | One W7900; fixed 19D action; gfx1100-safe host small-update loop |
 | 1:20-2:01 | Complete 40.65 s rollout | Unedited seed 777, pool 20, index 0 |
-| 2:01-2:25 | Evaluation table | 20/20 task success; 1/20 speed exceedance; no safety-qualification claim |
+| 2:01-2:25 | Evaluation table | Fresh-process A/B: trained 3/3 in both; batched Push is diagnostic-only |
 | 2:25-2:50 | Benchmark chart | 7,404 combined transitions/s at practical batch 2,048 |
 | 2:50-3:10 | Training card | 73,728 transitions; exact checkpoint scope; final KL and policy std |
 | 3:10-3:30 | Reproduction card | Versioned config, seed, hashes, renderer, fail-closed benchmark |
@@ -55,11 +57,11 @@ thousand sixty.
 
 ### 2:01-2:25
 
-Across twenty measured fixed-box episodes, task success was twenty out of
-twenty. One episode exceeded the pre-registered point-five meter-per-second
-object-speed limit. Therefore this is task-capability evidence, not strict
-safety qualification. Abnormal, illegal-contact, non-finite, and saturation
-counts were all zero.
+Across two fresh processes, the trained policy succeeded in all three exact
+repeats per process. Maximum object speeds were point-four-four-one and
+point-three-eight-four meters per second. Earlier batched Push statistics are
+diagnostic-only because repeated gfx eleven-hundred batches changed discrete
+outcomes. This remains simulation evidence, not a safety certificate.
 
 ### 2:25-2:50
 
@@ -99,5 +101,5 @@ for contact-rich physical AI on Radeon.
 - Add verified team name and member credits.
 - Record narration only if the exact measured claims remain unchanged.
 - Keep the complete 813-frame rollout segment intact.
-- Do not remove the `1/20` speed-exceedance disclosure.
+- Do not present the legacy 20-environment batch as qualification evidence.
 - Verify the final MP4 by decoding every frame and record its SHA-256.

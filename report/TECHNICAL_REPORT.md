@@ -10,12 +10,12 @@ holds it there. The implementation uses MuJoCo MJX dynamics, a
 MuJoCo Playground-style `MjxEnv`, Brax PPO, and a single Radeon PRO W7900
 through ROCm. CUDA-only simulators and training stacks are not used.
 
-The current fixed-box MVP completed the task in 20 of 20 measured episodes.
-It is not presented as a safety-qualified or randomized-placement controller:
-one of the 20 episodes exceeded the pre-registered 0.5 m/s object-speed limit,
-and a separate +/-0.01 m randomized-box candidate was rejected. This report
-keeps those limitations visible while documenting a reproducible successful
-rollout, the full task aggregate, and synchronized AMD GPU benchmarks.
+The current fixed-box MVP preserved successful discrete outcomes in two
+isolated fresh-process audits. It is not presented as a safety-certified or
+randomized-placement controller. A separate +/-0.01 m randomized-box candidate
+and the first closed-loop speed governor were both rejected. This report keeps
+those limitations visible while documenting a reproducible successful rollout,
+the valid single-environment evidence, and synchronized AMD GPU benchmarks.
 
 ## 1. Application definition
 
@@ -131,23 +131,28 @@ but no upstream PR is claimed as opened or merged in this draft.
 
 ## 5. Task evaluation
 
-The selected policy was evaluated with seed 777, 20 reset keys, 4,608 control
-steps per environment, and solver iterations 16.
+The selected policy was evaluated in two fresh processes with seed 777, one
+environment, 4,608 control steps, solver iterations 16, and three exact repeats
+per process.
 
-| Metric | Measured result |
-|---|---:|
-| Task success | 20/20 |
-| Episodes at or above 0.5 m/s | 1/20 |
-| Object-speed p95 | 0.347126 m/s |
-| Maximum object speed | 0.689896 m/s |
-| Object-height range | 0.097265-0.110376 m |
-| Abnormal / illegal / non-finite / saturation | 0 / 0 / 0 / 0 |
+| Metric | Process A | Fresh process B |
+|---|---:|---:|
+| Trained task success | 3/3 | 3/3 |
+| Baseline task success | 0/3 | 0/3 |
+| Trained maximum object speed | 0.441433 m/s | 0.383896 m/s |
+| Baseline maximum object speed | 0.351248 m/s | 0.277368 m/s |
+| Trained final goal distance | 0.079316 m | 0.074502 m |
 
-Solver iterations 16 reduced the maximum speed from 0.757749 m/s at solver
-iterations 8, but both settings still had exactly one speed exceedance.
-Parameter search stopped after that pre-registered comparison. A 100-episode
-claim is intentionally absent because the 20-episode strict gate had already
-failed.
+Within-process traces were exact. Fresh-process continuous values diverged near
+first object motion, but all discrete trained outcomes matched. The earlier
+20-environment run that reported 20/20 success and one speed exceedance is now
+diagnostic-only: repeated gfx1100 batches changed discrete outcomes. The
+evaluator therefore fails closed for batched Push qualification.
+
+An O2 speed governor reduced measured peaks to 0.223634-0.251639 m/s, but its
+fresh-process trained A/B pair changed from success to a Push-phase failure.
+The governor was rejected before training or randomized expansion. A
+100-episode claim remains intentionally absent.
 
 The +/-0.01 m randomized-box route was also rejected: its zero-residual
 baseline succeeded in 10/16 episodes and violated both the speed and height
@@ -166,8 +171,8 @@ speed was 0.305667 m/s, and object height stayed within
 0.098568-0.105137 m. The MP4 contains all 813 sequential frames at 20 fps
 (40.65 s) and decoded without errors.
 
-The representative video is demo evidence, not a replacement for the
-20-episode aggregate.
+The representative video is demo evidence, not a replacement for the isolated
+fresh-process evaluation.
 
 ## 6. Measured ROCm performance
 
@@ -257,10 +262,12 @@ in `THIRD_PARTY_NOTICES.md` and `assets/manifest.yaml`.
 
 ## 10. Limitations and open work
 
-1. Strict object-speed safety failed in 1/20 fixed-box episodes.
+1. Fixed-box evidence is limited to isolated fresh-process audits; the old
+   batched 20-environment result is diagnostic-only.
 2. Randomized box placement is not qualified.
 3. Evaluation is state-based and simulation-only.
-4. The formal 100-episode expansion is paused by the failed 20-episode gate.
+4. The formal 100-episode expansion is paused pending a stable sequential
+   evaluation design and randomized task qualification.
 5. Large fused reverse-mode PPO graphs are not validated on this gfx1100
    software stack.
 6. RGC did not expose the base image digest inside the instance.

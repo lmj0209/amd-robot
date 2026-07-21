@@ -2,8 +2,8 @@
 
 > **Status:** Gates G0 and G1 have passed on one Radeon PRO W7900 with ROCm.
 > The fixed-near-field Push MVP has a reproducible successful rollout and
-> `20/20` task success in the current qualification batch. It is not yet
-> qualified against the strict maximum object-speed gate; see
+> stable discrete outcomes in isolated single-environment fresh-process
+> audits. Batched gfx1100 Push execution is diagnostic-only; see
 > [Measured Push result](#measured-push-result).
 
 ## Project
@@ -80,23 +80,30 @@ The smoke command returns 0 only if all of these pass:
 
 ## Measured Push result
 
-The current deterministic trained policy was evaluated on RGC with
-`seed=777`, 20 reset keys, 4,608 control steps per environment, and solver
-iterations 16:
+The current deterministic trained policy was evaluated on RGC in two fresh
+processes. Each process ran three exact-repeat audits with one environment,
+`seed=777`, 4,608 control steps, and solver iterations 16:
 
-| Metric | Measured result |
-|---|---:|
-| Task success | `20/20` |
-| Object-speed gate exceedance (`>=0.5 m/s`) | `1/20` |
-| Object-speed p95 | `0.347126 m/s` |
-| Maximum object speed | `0.689896 m/s` |
-| Object-height range | `0.097265–0.110376 m` |
-| Abnormal / illegal / non-finite / saturation events | `0 / 0 / 0 / 0` |
+| Metric | Process A | Fresh process B |
+|---|---:|---:|
+| Trained task success | `3/3` | `3/3` |
+| Baseline task success | `0/3` | `0/3` |
+| Trained maximum object speed | `0.441433 m/s` | `0.383896 m/s` |
+| Baseline maximum object speed | `0.351248 m/s` | `0.277368 m/s` |
+| Trained final goal distance | `0.079316 m` | `0.074502 m` |
 
-Solver iterations 16 reduced the maximum from `0.757749 m/s` at solver
-iterations 8, but it did not pass the pre-registered `<0.5 m/s` maximum gate.
-The result is therefore task-capability evidence, not a maximum-speed safety
-qualification. Numerical parameter search stopped after this comparison.
+Within each process, repeated traces were exact. Continuous trajectories
+diverged across fresh processes near first box motion, but success, terminal,
+phase, and abnormal outcomes matched. A legacy 20-environment run reported
+`20/20` success and one speed exceedance; it is no longer qualification
+evidence because repeated gfx1100 batched execution changed both trajectories
+and discrete outcomes. Regular Push evaluation now fails closed unless
+`--eval-num-envs 1` is selected.
+
+The first object-speed governor experiment reduced measured peaks to
+`0.223634–0.251639 m/s`, but a fresh-process A/B pair changed from success to
+a Push-phase failure. It is retained as a rejected diagnostic and is not the
+MVP controller. The frozen candidate remains fixed-v3 without the governor.
 
 ## Reproduce one unedited rollout
 
