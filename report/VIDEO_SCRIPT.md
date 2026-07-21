@@ -6,13 +6,12 @@ from this script with English on-screen text plus the complete unedited
 simulation rollout. Optional narration below may be recorded later; it must
 not replace or cover the measured on-screen limitations.
 
-Review status: a corrected silent v3 candidate was rendered from commit
-`a40fa8a18dfb6f9b04b861fb70386c9d380408c7`. It contains 4,793 decoded frames
+Review status: a credited silent v4 candidate was rendered from commit
+`4ae1aa5239460224a1b4265ec825916e0f2b8855`. It contains 4,793 decoded frames
 over 239.65 seconds, including all 813 rollout frames. Its SHA-256 is
-`1bcde63c694df3e46809dcf6b3b0ad5177557ad096dcf5cec1dfc6f84c4354bd`.
-The verified credit is `limengjin — Solo developer`. The current review
-candidate is silent with complete English on-screen text. Public artifact
-links still need to be supplied before submission.
+`90e949e693d5c0bf6d72cccb4cdc24412bba441622570418d92d287741736c35`.
+The verified credit is `limengjin — Solo developer`. Public repository,
+video, and checkpoint links still need to be supplied before submission.
 
 | Time | Visual | On-screen message |
 |---|---|---|

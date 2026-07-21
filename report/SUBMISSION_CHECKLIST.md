@@ -34,13 +34,13 @@ private resource or publish it without an explicit access decision.
 
 ## Final media gate
 
-- [ ] Render after the final credit and public-link decisions are frozen.
-- [ ] Decode every output frame and compare it with the expected frame count.
-- [ ] Confirm H.264 High, yuv420p, 960x540, 20 fps, and duration below 4:00.
-- [ ] Confirm the audio decision and inspect the final stream list.
-- [ ] Inspect the title, rollout entry/exit, evaluation card, limitations, and
+- [x] Render after the final credit decision is frozen.
+- [x] Decode every output frame and compare it with the expected frame count.
+- [x] Confirm H.264 High, yuv420p, 960x540, 20 fps, and duration below 4:00.
+- [x] Confirm the silent audio decision and inspect the final stream list.
+- [x] Inspect the title, rollout entry/exit, evaluation card, limitations, and
   closing frame.
-- [ ] Save the renderer commit, manifest, SHA256SUMS, and review decision.
+- [x] Save the renderer commit, manifest, SHA256SUMS, and review decision.
 
 ## Release gate
 
