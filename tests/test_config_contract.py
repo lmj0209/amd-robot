@@ -56,6 +56,10 @@ def test_menagerie_fetch_defaults_to_the_manifest_commit() -> None:
     assert 'origin "$MENAGERIE_REF"' in script
     assert "checkout --quiet --detach FETCH_HEAD" in script
     assert '"$COMMIT" != "$MENAGERIE_REF"' in script
+    assert "/etc/ssl/certs/ca-certificates.crt" in script
+    assert 'GIT_CA_ARGS=(-c "http.sslCAInfo=$ca_file")' in script
+    assert 'git "${GIT_CA_ARGS[@]}" -C "$TMP/menagerie" fetch' in script
+    assert "http.sslVerify=false" not in script
 
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "assets/menagerie/unitree_go2/" in gitignore

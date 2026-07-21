@@ -15,6 +15,22 @@ DST="${REPO_ROOT}/assets/menagerie"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# Some minimal ROCm images ship a valid system CA bundle without teaching Git
+# where to find it. Keep TLS verification enabled and scope the fallback to the
+# network command below; never mutate the user's global Git configuration.
+GIT_CA_ARGS=()
+if [[ -z "$(git config --get http.sslCAInfo || true)" ]]; then
+  for ca_file in \
+    /etc/ssl/certs/ca-certificates.crt \
+    /etc/pki/tls/certs/ca-bundle.crt \
+    /etc/ssl/cert.pem; do
+    if [[ -f "$ca_file" ]]; then
+      GIT_CA_ARGS=(-c "http.sslCAInfo=$ca_file")
+      break
+    fi
+  done
+fi
+
 echo ">> sparse-cloning mujoco_menagerie @ ${MENAGERIE_REF}"
 git init --quiet "$TMP/menagerie"
 git -C "$TMP/menagerie" remote add origin "$MENAGERIE_REPO"
@@ -22,7 +38,8 @@ git -C "$TMP/menagerie" config remote.origin.promisor true
 git -C "$TMP/menagerie" config remote.origin.partialclonefilter blob:none
 git -C "$TMP/menagerie" sparse-checkout init --cone
 git -C "$TMP/menagerie" sparse-checkout set unitree_go2 unitree_z1
-git -C "$TMP/menagerie" fetch --depth 1 --filter=blob:none \
+git "${GIT_CA_ARGS[@]}" -C "$TMP/menagerie" fetch \
+  --depth 1 --filter=blob:none \
   origin "$MENAGERIE_REF"
 git -C "$TMP/menagerie" checkout --quiet --detach FETCH_HEAD
 COMMIT="$(git -C "$TMP/menagerie" rev-parse HEAD)"
