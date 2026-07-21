@@ -6,12 +6,14 @@ from amd_robo.contracts import (
     ACTION_LAYOUT,
     REQUIRED_INFO_KEYS,
     REQUIRED_TERMINATION_SIGNALS,
+    ActionLayout,
     TaskPhase,
     validate_action,
 )
 
 
 def test_action_layout_is_contiguous_and_frozen_at_19() -> None:
+    assert ActionLayout() == ACTION_LAYOUT
     assert ACTION_LAYOUT.size == 19
     assert ACTION_LAYOUT.covered_indices() == tuple(range(19))
     assert ACTION_LAYOUT.leg == slice(0, 12)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sized
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Final
 
@@ -21,9 +21,9 @@ class TaskPhase(IntEnum):
 class ActionLayout:
     """Frozen policy action layout used by every curriculum stage."""
 
-    leg: slice = slice(0, 12)
-    arm: slice = slice(12, 18)
-    gripper: slice = slice(18, 19)
+    leg: slice = field(default_factory=lambda: slice(0, 12))
+    arm: slice = field(default_factory=lambda: slice(12, 18))
+    gripper: slice = field(default_factory=lambda: slice(18, 19))
     size: int = 19
 
     def covered_indices(self) -> tuple[int, ...]:
