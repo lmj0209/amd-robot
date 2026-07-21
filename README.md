@@ -6,6 +6,8 @@
 > audits. Batched gfx1100 Push execution is diagnostic-only; see
 > [Measured Push result](#measured-push-result).
 
+**Author:** limengjin — solo developer.
+
 ## Project
 
 A quadruped-with-arm robot learns to approach a box and push it into a goal

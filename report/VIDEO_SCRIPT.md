@@ -10,8 +10,9 @@ Review status: a corrected silent v3 candidate was rendered from commit
 `a40fa8a18dfb6f9b04b861fb70386c9d380408c7`. It contains 4,793 decoded frames
 over 239.65 seconds, including all 813 rollout frames. Its SHA-256 is
 `1bcde63c694df3e46809dcf6b3b0ad5177557ad096dcf5cec1dfc6f84c4354bd`.
-Team credits, the final audio decision, and public artifact links still need
-to be supplied before public submission.
+The verified credit is `limengjin — Solo developer`. The current review
+candidate is silent with complete English on-screen text. Public artifact
+links still need to be supplied before submission.
 
 | Time | Visual | On-screen message |
 |---|---|---|
@@ -105,7 +106,7 @@ for contact-rich physical AI on Radeon.
 
 ## Final-edit checklist
 
-- Add verified team name and member credits.
+- Keep the verified `limengjin — Solo developer` credit visible.
 - Record narration only if the exact measured claims remain unchanged.
 - Keep the complete 813-frame rollout segment intact.
 - Do not present the legacy 20-environment batch as qualification evidence.

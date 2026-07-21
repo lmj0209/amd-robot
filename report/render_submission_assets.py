@@ -19,6 +19,8 @@ ACCENT = "#ed1c24"
 CYAN = "#54c7ec"
 GREEN = "#67d391"
 YELLOW = "#f4c95d"
+CREATOR = "limengjin"
+CREATOR_ROLE = "Solo developer"
 
 
 def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -116,7 +118,7 @@ def _title_slide(final_frame: Path) -> Image.Image:
     )
     draw.text(
         (58, 465),
-        "AMD Robot Competition | Track 3 Physical AI",
+        f"{CREATOR} | {CREATOR_ROLE} | AMD Robot Competition | Track 3 Physical AI",
         font=SMALL,
         fill=MUTED,
     )
@@ -346,6 +348,12 @@ def _closing_slide(final_frame: Path) -> Image.Image:
         "Fresh-process A/B matched | limitations disclosed",
         font=BODY,
         fill=TEXT,
+    )
+    draw.text(
+        (58, 430),
+        f"Created by {CREATOR} | {CREATOR_ROLE}",
+        font=SMALL,
+        fill=CYAN,
     )
     draw.text(
         (58, 465),
