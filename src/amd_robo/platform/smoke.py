@@ -9,9 +9,10 @@ import subprocess
 import tempfile
 import time
 import traceback
+from collections.abc import Sequence
 from importlib import metadata
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 
 class SmokeFailure(RuntimeError):

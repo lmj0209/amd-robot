@@ -9,7 +9,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-
 FPS = 20
 WIDTH = 960
 HEIGHT = 540

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sized
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Final, Sized
+from typing import Final
 
 
 class TaskPhase(IntEnum):

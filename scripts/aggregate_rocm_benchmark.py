@@ -11,7 +11,6 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-
 RESULT_PREFIX = "ROCM_BENCHMARK "
 IDENTITY_FIELDS = ("backend", "mode", "batch_size")
 CSV_FIELDS = (

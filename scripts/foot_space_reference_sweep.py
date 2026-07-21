@@ -17,9 +17,6 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from amd_robo.envs.go2_kinematics import (  # noqa: E402
-    go2_foot_space_crawl_reference,
-)
 from crawl_reference_sweep import (  # noqa: E402
     CRAWL_SEQUENCE,
     DEFAULT_XML,
@@ -27,6 +24,10 @@ from crawl_reference_sweep import (  # noqa: E402
     FOOT_SITE_NAMES,
     _active_contacts,
     _tilt_deg,
+)
+
+from amd_robo.envs.go2_kinematics import (  # noqa: E402
+    go2_foot_space_crawl_reference,
 )
 
 

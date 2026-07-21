@@ -38,9 +38,10 @@ def main() -> int:
     from amd_robo.platform import _compat
 
     _compat.apply_brax_compat()
-    from amd_robo.envs.go2_z1 import Go2Z1Env
     from brax.training.agents.ppo import train as ppo
     from mujoco_playground import wrapper
+
+    from amd_robo.envs.go2_z1 import Go2Z1Env
 
     # batch_size x num_minibatches must equal num_envs (Brax PPO constraint).
     batch_size = args.num_envs // 4

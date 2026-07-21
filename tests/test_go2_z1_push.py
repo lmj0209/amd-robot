@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
+import mujoco
+import pytest
 
 from amd_robo.contracts import TaskPhase
 from amd_robo.envs.go2_z1_push import Go2Z1PushEnv

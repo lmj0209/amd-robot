@@ -13,6 +13,5 @@ if str(SRC) not in sys.path:
 
 from amd_robo.platform.rollout_probe import main  # noqa: E402
 
-
 if __name__ == "__main__":
     raise SystemExit(main())

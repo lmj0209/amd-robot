@@ -18,7 +18,6 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
-
 from locomotion_learn_smoke import _load_config, _make_env  # noqa: E402
 
 

@@ -10,10 +10,11 @@ import platform
 import socket
 import subprocess
 import sys
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 
 def _run(command: list[str], cwd: Path | None = None, timeout: int = 30) -> dict:
@@ -109,7 +110,7 @@ def collect(
     image_digest: str | None,
     config_paths: Sequence[Path],
 ) -> dict[str, Any]:
-    captured = datetime.now(timezone.utc)
+    captured = datetime.now(UTC)
     configs = []
     for path in config_paths:
         resolved = path.resolve()
@@ -185,7 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         image_digest=args.image_digest,
         config_paths=args.config,
     )
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     commit = info["git"]["commit"]
     suffix = commit[:8] if commit else "nogit"
     output_dir = args.output_dir.resolve()

@@ -47,10 +47,16 @@ asset is included in this repository.
 These tests do not prove ROCm support:
 
 ```bash
-python -m pip install pytest pyyaml
+python -m pip install -r requirements.txt
+python -m pip install pytest ruff
 python -m pip install -e . --no-deps
 python -m pytest
+python -m ruff check .
 ```
+
+`requirements.txt` is the local CPU bootstrap and must not be used as ROCm
+benchmark evidence. RGC uses the separately validated stack documented in
+`requirements/README.md`.
 
 All 36 Go2/Z1 meshes referenced by the assembled model are included, so a
 clean checkout does not need a network fetch to load the robot. The optional

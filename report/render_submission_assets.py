@@ -8,7 +8,6 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-
 WIDTH = 960
 HEIGHT = 540
 BACKGROUND = "#0c111b"
