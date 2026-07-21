@@ -216,15 +216,15 @@ def _evaluation_slide() -> Image.Image:
     image, draw = _canvas("Measured task result")
     draw.text(
         (50, 61),
-        "Capability passed; strict speed gate did not",
+        "Isolated fresh-process evidence",
         font=TITLE,
         fill=TEXT,
     )
     metrics = [
-        ("20/20", "task success", GREEN),
-        ("1/20", "speed exceedance", YELLOW),
-        ("0.347", "speed p95, m/s", CYAN),
-        ("0.690", "maximum, m/s", ACCENT),
+        ("3/3", "trained success, A", GREEN),
+        ("3/3", "trained success, B", GREEN),
+        ("0.441", "maximum A, m/s", CYAN),
+        ("0.384", "maximum B, m/s", CYAN),
     ]
     for index, (value, label, color) in enumerate(metrics):
         x0 = 45 + index * 226
@@ -233,14 +233,14 @@ def _evaluation_slide() -> Image.Image:
         draw.text((x0 + 18, 232), label, font=SMALL, fill=MUTED)
     draw.text(
         (53, 327),
-        "0 abnormal | 0 illegal | 0 non-finite | 0 saturation",
+        "Within-process repeats exact | fresh-process discrete outcomes match",
         font=SUBTITLE,
         fill=TEXT,
     )
     draw.rounded_rectangle((50, 383, 910, 438), radius=12, fill="#2d1f16")
     draw.text(
         (72, 398),
-        "Disclosure: this is not maximum-speed safety qualification.",
+        "Disclosure: batched gfx1100 Push is diagnostic-only.",
         font=BODY,
         fill=YELLOW,
     )
@@ -316,9 +316,9 @@ def _limitations_slide() -> Image.Image:
         [
             "No randomized-box qualification",
             "No perception, sim-to-real result, or hardware safety certificate",
-            "The 100-episode expansion is paused after the 20-episode speed gate failed",
+            "The 100-episode expansion awaits stable sequential randomization",
             "Large fused PPO scans are outside the validated gfx1100 boundary",
-            "A compiler minimal repro and upstream report remain open work",
+            "The optional upstream report remains paused",
         ],
         y=137,
         width=72,
@@ -343,7 +343,7 @@ def _closing_slide(final_frame: Path) -> Image.Image:
     draw.rounded_rectangle((55, 287, 771, 354), radius=14, fill="#111b28")
     draw.text(
         (78, 306),
-        "20/20 task success | limitations disclosed",
+        "Fresh-process A/B matched | limitations disclosed",
         font=BODY,
         fill=TEXT,
     )
