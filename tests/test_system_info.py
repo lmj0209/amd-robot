@@ -15,6 +15,6 @@ def test_command_capture_preserves_command_and_exit_code() -> None:
 
 def test_sha256_is_stable(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
-    path.write_text("a: 1\n", encoding="utf-8")
-    expected = "db9bda4272ee21cda5ff1d213fa8366a2cca3143c5a795bdcd5f75a85106033d"
+    path.write_bytes(b"a: 1\n")
+    expected = "37b128c59f1f5097f73f82691cb519f1f568667faab5ced1b4ab979d36837eae"
     assert _sha256(path) == expected
