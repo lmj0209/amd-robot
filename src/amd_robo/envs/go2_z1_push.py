@@ -68,6 +68,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         align_distance_threshold: float = DEFAULT_ALIGN_DISTANCE_THRESHOLD,
         push_command_x: float = DEFAULT_PUSH_COMMAND_X,
         push_command_ramp_duration: float = 0.0,
+        object_speed_governor_start: float | None = None,
+        object_speed_governor_stop: float | None = None,
         hold_entry_command_decay_duration: float = 0.0,
         align_gait_phase_sync: bool = False,
         align_gait_phase_fraction: float = 0.0,
@@ -102,6 +104,20 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             raise ValueError("push command must be positive")
         if push_command_ramp_duration < 0.0:
             raise ValueError("push command ramp duration must be non-negative")
+        if (object_speed_governor_start is None) != (
+            object_speed_governor_stop is None
+        ):
+            raise ValueError("object speed governor thresholds must be set together")
+        if object_speed_governor_start is not None:
+            assert object_speed_governor_stop is not None
+            if object_speed_governor_start < 0.0:
+                raise ValueError("object speed governor start must be non-negative")
+            if object_speed_governor_stop <= object_speed_governor_start:
+                raise ValueError("object speed governor stop must exceed start")
+            if object_speed_governor_stop > object_speed_limit:
+                raise ValueError(
+                    "object speed governor stop must not exceed the speed limit"
+                )
         if hold_entry_command_decay_duration < 0.0:
             raise ValueError(
                 "hold entry command decay duration must be non-negative"
@@ -165,6 +181,16 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             dtype=jnp.float32,
         )
         self._push_command_ramp_duration = float(push_command_ramp_duration)
+        self._object_speed_governor_start = (
+            None
+            if object_speed_governor_start is None
+            else float(object_speed_governor_start)
+        )
+        self._object_speed_governor_stop = (
+            None
+            if object_speed_governor_stop is None
+            else float(object_speed_governor_stop)
+        )
         self._hold_entry_command_decay_duration = float(
             hold_entry_command_decay_duration
         )
@@ -457,15 +483,36 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         )
 
     def _push_command_for_state(self, state) -> jax.Array:
-        if self._push_command_ramp_duration == 0.0:
-            return self._push_command
+        ramp_scale = jnp.asarray(1.0, dtype=self._push_command.dtype)
+        if self._push_command_ramp_duration > 0.0:
+            progress = jnp.clip(
+                state.info["push_steps"]
+                * self.dt
+                / self._push_command_ramp_duration,
+                0.0,
+                1.0,
+            )
+            ramp_scale = progress * progress * (3.0 - 2.0 * progress)
+        return self._push_command * ramp_scale * self._object_speed_governor_scale(
+            state
+        )
+
+    def _object_speed_governor_scale(self, state) -> jax.Array:
+        if self._object_speed_governor_start is None:
+            return jnp.asarray(1.0, dtype=self._push_command.dtype)
+        assert self._object_speed_governor_stop is not None
+        object_speed = jnp.linalg.norm(state.info["object_qvel"][:2])
         progress = jnp.clip(
-            state.info["push_steps"] * self.dt / self._push_command_ramp_duration,
+            (object_speed - self._object_speed_governor_start)
+            / (
+                self._object_speed_governor_stop
+                - self._object_speed_governor_start
+            ),
             0.0,
             1.0,
         )
         smooth_progress = progress * progress * (3.0 - 2.0 * progress)
-        return self._push_command * smooth_progress
+        return 1.0 - smooth_progress
 
     def _hold_entry_command_for_state(self, state) -> jax.Array:
         if self._hold_entry_command_decay_duration == 0.0:
@@ -664,6 +711,8 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
         command: jax.Array | None = None,
         gait_phase: jax.Array | None = None,
     ) -> jax.Array:
+        if command is not None:
+            command = self._policy_command_for_observation(phase, command)
         locomotion = super()._observation(
             data,
             last_action,
@@ -691,6 +740,20 @@ class Go2Z1PushEnv(Go2Z1LocomotionEnv):
             ]
         )
         return jnp.clip(jnp.concatenate([locomotion, task]), -10.0, 10.0)
+
+    def _policy_command_for_observation(
+        self,
+        phase: jax.Array,
+        applied_command: jax.Array,
+    ) -> jax.Array:
+        """Keep the requested Push setpoint separate from its safety filter."""
+        if self._object_speed_governor_start is None:
+            return applied_command
+        return jnp.where(
+            phase == int(TaskPhase.PUSH),
+            self._push_command,
+            applied_command,
+        )
 
     def _with_task_state(self, state):
         (

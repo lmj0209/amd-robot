@@ -252,6 +252,120 @@ def test_push_command_ramp_uses_smoothstep_before_full_speed():
     assert jnp.allclose(command_at(200), env._push_command)
 
 
+def test_object_speed_governor_smoothly_reduces_only_push_command():
+    env = Go2Z1PushEnv(
+        object_speed_governor_start=0.1,
+        object_speed_governor_stop=0.2,
+    )
+    state = env.reset(jax.random.PRNGKey(0))
+
+    def command_at(object_speed):
+        staged = state.replace(
+            info={
+                **state.info,
+                "phase": jnp.asarray(int(TaskPhase.PUSH)),
+                "object_qvel": state.info["object_qvel"].at[0].set(object_speed),
+            }
+        )
+        return env._push_command_for_state(staged)
+
+    assert jnp.allclose(command_at(0.0), env._push_command)
+    assert jnp.allclose(command_at(0.1), env._push_command)
+    assert jnp.allclose(command_at(0.15), env._push_command * 0.5)
+    assert jnp.allclose(command_at(0.2), 0.0)
+    assert jnp.allclose(command_at(1.0), 0.0)
+
+
+def test_object_speed_governor_composes_with_startup_ramp():
+    env = Go2Z1PushEnv(
+        push_command_ramp_duration=1.0,
+        object_speed_governor_start=0.1,
+        object_speed_governor_stop=0.2,
+    )
+    state = env.reset(jax.random.PRNGKey(0))
+    staged = state.replace(
+        info={
+            **state.info,
+            "phase": jnp.asarray(int(TaskPhase.PUSH)),
+            "push_steps": jnp.asarray(50, dtype=jnp.int32),
+            "object_qvel": state.info["object_qvel"].at[0].set(0.15),
+        }
+    )
+
+    assert jnp.allclose(
+        env._push_command_for_state(staged), env._push_command * 0.25
+    )
+
+
+def test_object_speed_governor_preserves_requested_policy_command():
+    governor = Go2Z1PushEnv(
+        object_speed_governor_start=0.1,
+        object_speed_governor_stop=0.2,
+    )
+    unfiltered = Go2Z1PushEnv()
+    applied = governor._push_command * 0.25
+
+    assert jnp.allclose(
+        governor._policy_command_for_observation(
+            jnp.asarray(int(TaskPhase.PUSH)), applied
+        ),
+        governor._push_command,
+    )
+    assert jnp.allclose(
+        governor._policy_command_for_observation(
+            jnp.asarray(int(TaskPhase.ALIGN)), jnp.zeros_like(applied)
+        ),
+        0.0,
+    )
+    assert jnp.allclose(
+        unfiltered._policy_command_for_observation(
+            jnp.asarray(int(TaskPhase.PUSH)), applied
+        ),
+        applied,
+    )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        (
+            {"object_speed_governor_start": 0.1},
+            "object speed governor thresholds must be set together",
+        ),
+        (
+            {"object_speed_governor_stop": 0.2},
+            "object speed governor thresholds must be set together",
+        ),
+        (
+            {
+                "object_speed_governor_start": -0.1,
+                "object_speed_governor_stop": 0.2,
+            },
+            "object speed governor start must be non-negative",
+        ),
+        (
+            {
+                "object_speed_governor_start": 0.2,
+                "object_speed_governor_stop": 0.2,
+            },
+            "object speed governor stop must exceed start",
+        ),
+        (
+            {
+                "object_speed_governor_start": 0.1,
+                "object_speed_governor_stop": 0.6,
+            },
+            "object speed governor stop must not exceed the speed limit",
+        ),
+    ],
+)
+def test_object_speed_governor_rejects_invalid_configuration(
+    kwargs: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        Go2Z1PushEnv(**kwargs)
+
+
 def test_hold_entry_command_decay_uses_smoothstep_before_stopping():
     env = Go2Z1PushEnv(hold_entry_command_decay_duration=0.5)
     state = env.reset(jax.random.PRNGKey(0))

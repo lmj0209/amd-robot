@@ -683,6 +683,10 @@ def _sequential_eval(
             push_peak_end_effector_distance_by_env = jnp.zeros((n_envs,))
             push_peak_object_displacement_by_env = jnp.zeros((n_envs,))
             push_peak_leg_action_rms_by_env = jnp.zeros((n_envs,))
+            push_peak_command_scale_by_env = jnp.ones((n_envs,))
+            push_governor_active_steps = jnp.zeros(())
+            push_phase_steps = jnp.zeros(())
+            push_min_command_scale = jnp.asarray(1.0)
             push_min_object_height_by_env = jnp.full((n_envs,), jnp.inf)
             push_max_object_height_by_env = jnp.full((n_envs,), -jnp.inf)
             push_initial_object_x = state.info["object_pos"][:, 0]
@@ -831,6 +835,22 @@ def _sequential_eval(
                 object_speed = jnp.linalg.norm(
                     state.info["object_qvel"][:, :2], axis=-1
                 )
+                push_phase_active = active & (phase == int(TaskPhase.PUSH))
+                command_scale = jnp.clip(
+                    state.info["command"][:, 0] / env._push_command[0],
+                    0.0,
+                    1.0,
+                )
+                push_phase_steps += jnp.sum(push_phase_active)
+                push_governor_active_steps += jnp.sum(
+                    push_phase_active & (command_scale < 1.0 - 1.0e-6)
+                )
+                push_min_command_scale = jnp.minimum(
+                    push_min_command_scale,
+                    jnp.min(
+                        jnp.where(push_phase_active, command_scale, 1.0)
+                    ),
+                )
                 object_height = state.metrics["object_height"]
                 push_last_goal_distance = jnp.where(
                     active, goal_distance, push_last_goal_distance
@@ -893,6 +913,11 @@ def _sequential_eval(
                     new_speed_peak,
                     jnp.sqrt(jnp.mean(actions[:, :12] ** 2, axis=-1)),
                     push_peak_leg_action_rms_by_env,
+                )
+                push_peak_command_scale_by_env = jnp.where(
+                    new_speed_peak,
+                    command_scale,
+                    push_peak_command_scale_by_env,
                 )
                 push_max_object_speed_by_env = jnp.where(
                     active,
@@ -1000,6 +1025,11 @@ def _sequential_eval(
                         push_distance_total / jnp.maximum(push_active_steps, 1)
                     ),
                     "push_max_object_speed": float(push_max_object_speed),
+                    "push_governor_activation_fraction": float(
+                        push_governor_active_steps
+                        / jnp.maximum(push_phase_steps, 1)
+                    ),
+                    "push_min_command_scale": float(push_min_command_scale),
                     "push_min_object_height": float(push_min_object_height),
                     "push_max_object_height": float(push_max_object_height),
                     "push_initial_object_x_min": float(
@@ -1056,6 +1086,10 @@ def _sequential_eval(
                     "push_peak_leg_action_rms_by_env": tuple(
                         float(value)
                         for value in push_peak_leg_action_rms_by_env
+                    ),
+                    "push_peak_command_scale_by_env": tuple(
+                        float(value)
+                        for value in push_peak_command_scale_by_env
                     ),
                     "push_min_object_height_by_env": tuple(
                         float(value) for value in push_min_object_height_by_env

@@ -944,6 +944,92 @@ def test_push_near_field_solver16_changes_only_solver_iterations() -> None:
     assert solver16_push == base_push
 
 
+def test_push_near_field_governor_changes_only_command_envelope() -> None:
+    solver16 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_solver16_qualification.yaml"
+        ).read_text()
+    )
+    governor = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_solver16_governor_qualification.yaml"
+        ).read_text()
+    )
+
+    assert governor["status"] == (
+        "push_stage2_near_field_solver16_governor_qualification"
+    )
+    assert governor["push"]["object_speed_governor_start"] == 0.1
+    assert governor["push"]["object_speed_governor_stop"] == 0.2
+    assert governor["manual_evaluation"]["num_envs"] == 1
+    assert governor["manual_evaluation"]["repeat_count"] == 20
+    for section in (
+        "environment",
+        "curriculum",
+        "reward",
+        "ppo",
+        "rocm_guardrails",
+        "checkpoint",
+    ):
+        assert governor[section] == solver16[section]
+
+    solver16_push = dict(solver16["push"])
+    governor_push = dict(governor["push"])
+    governor_push.pop("object_speed_governor_start")
+    governor_push.pop("object_speed_governor_stop")
+    assert governor_push == solver16_push
+
+    solver16_evaluation = dict(solver16["manual_evaluation"])
+    governor_evaluation = dict(governor["manual_evaluation"])
+    for key in ("num_envs", "repeat_count"):
+        solver16_evaluation.pop(key)
+        governor_evaluation.pop(key)
+    assert governor_evaluation == solver16_evaluation
+
+
+def test_push_near_field_governor025_changes_only_stop_speed() -> None:
+    governor020 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_solver16_governor_qualification.yaml"
+        ).read_text()
+    )
+    governor025 = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_solver16_governor025_qualification.yaml"
+        ).read_text()
+    )
+
+    assert governor025["status"] == (
+        "push_stage2_near_field_solver16_governor025_qualification"
+    )
+    assert governor020["push"]["object_speed_governor_stop"] == 0.2
+    assert governor025["push"]["object_speed_governor_stop"] == 0.25
+    for section in (
+        "environment",
+        "curriculum",
+        "reward",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert governor025[section] == governor020[section]
+
+    governor020_push = dict(governor020["push"])
+    governor025_push = dict(governor025["push"])
+    governor020_push.pop("object_speed_governor_stop")
+    governor025_push.pop("object_speed_governor_stop")
+    assert governor025_push == governor020_push
+
+
 def test_training_defaults_match_the_active_locomotion_stage() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "train.yaml").read_text())
 
