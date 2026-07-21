@@ -10,6 +10,8 @@ Upstream base: `google/brax@1aa46f127bc4208d0c6de350a58ef00c8f01b0d9`
 
 Prepared commit: `0802964232f42a6732c4c27236bbad785f3ab452`
 
+Public PR: <https://github.com/google/brax/pull/674>
+
 ## Summary
 
 Pass PPO's `_PMAP_AXIS_NAME` to `bcast_local_devices` when placing the initial
@@ -68,6 +70,6 @@ The default `_device_put_sharded` value remains unchanged for other callers.
 - [x] Focused test passes on the CPU backend.
 - [x] Minimal PPO smoke passes on CPU and ROCm.
 - [x] Input/output sharding equality is measured on ROCm.
-- [ ] Contributor License Agreement confirmed by the submitting account.
-- [ ] Branch pushed to the submitter's Brax fork.
-- [ ] Pull request opened and URL recorded.
+- [x] Contributor License Agreement confirmed by the submitting account.
+- [x] Branch pushed to the submitter's Brax fork.
+- [x] Pull request opened and URL recorded.
