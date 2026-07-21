@@ -18,9 +18,12 @@ ROCm tests are separate because local CPU success is not RGC evidence:
 
 ```bash
 python scripts/system_info.py --config configs/smoke.yaml \
-  --image-name TODO_FROM_RGC --image-digest TODO_FROM_RGC
+  --image-name amd-oneclick-base:rocm7.2.1-py3.12-v20260416
 python scripts/smoke_test.py
 ```
+
+The audited RGC instance did not expose an immutable image digest, so the
+system-info record leaves it null rather than using a placeholder.
 
 ## Gate workflow
 

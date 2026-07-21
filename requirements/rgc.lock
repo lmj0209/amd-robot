@@ -1,0 +1,88 @@
+# Exact validated RGC environment recorded on 2026-07-21.
+# GPU: Radeon PRO W7900 (gfx1100); ROCm userspace: 7.2.1; Python: 3.12.3.
+# Source: /workspace/.venv/bin/python -m pip freeze --all.
+#
+# The editable amd-robo SSH requirement and pip itself are intentionally
+# excluded.  The Playground URL is normalized from the installation proxy to
+# the same upstream commit on the official Google DeepMind repository.
+# Install the ROCm-specific JAX stack as described in requirements/README.md
+# before applying the remaining pins; do not replace it with a generic wheel.
+
+absl-py==2.5.0
+aiofiles==25.1.0
+asttokens==3.0.2
+blinker==1.9.0
+brax==0.14.2
+click==8.4.2
+contourpy==1.3.3
+cycler==0.12.1
+decorator==5.3.1
+etils==1.14.0
+executing==2.2.1
+Flask==3.1.3
+flask-cors==6.0.5
+flax==0.12.7
+fonttools==4.63.0
+fsspec==2026.6.0
+glfw==2.10.0
+humanize==4.16.0
+ipython==9.15.0
+ipython_pygments_lexers==1.1.1
+itsdangerous==2.2.0
+jax==0.10.2
+jax-rocm7-pjrt==0.10.2
+jax-rocm7-plugin==0.10.2
+jaxlib==0.10.2
+jaxopt==0.8.5
+jedi==0.20.0
+Jinja2==3.1.6
+kiwisolver==1.5.0
+lxml==6.1.1
+markdown-it-py==4.2.0
+MarkupSafe==3.0.3
+matplotlib==3.11.0
+matplotlib-inline==0.2.2
+mdurl==0.1.2
+mediapy==1.2.7
+ml_collections==1.1.0
+ml_dtypes==0.5.4
+msgpack==1.2.1
+mujoco==3.10.0
+mujoco-mjx==3.10.0
+numpy==2.5.1
+opt_einsum==3.4.0
+optax==0.2.8
+orbax-checkpoint==0.12.1
+packaging==26.2
+parso==0.8.7
+pexpect==4.9.0
+pillow==12.3.0
+playground @ git+https://github.com/google-deepmind/mujoco_playground.git@43d180a226da3aae091d918b63c06c3a343519ad
+prometheus_client==0.25.0
+prompt_toolkit==3.0.52
+protobuf==7.35.1
+psutil==7.2.2
+ptyprocess==0.7.0
+pure_eval==0.2.3
+Pygments==2.20.0
+PyOpenGL==3.1.10
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+rich==15.0.0
+scipy==1.18.0
+simplejson==4.1.1
+six==1.17.0
+stack-data==0.6.3
+tensorboardX==2.6.5
+tensorstore==0.1.84
+tqdm==4.68.4
+traitlets==5.15.1
+treescope==0.1.10
+trimesh==4.12.2
+typing_extensions==4.16.0
+uvloop==0.22.1
+warp-lang==1.15.0
+wcwidth==0.8.2
+Werkzeug==3.1.8
+zipp==4.1.0

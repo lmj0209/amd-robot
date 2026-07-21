@@ -1,25 +1,37 @@
 #!/usr/bin/env bash
 # Fetch Unitree Go2 + Z1(gripper) MJCF and meshes from MuJoCo Menagerie
-# (BSD-3-Clause). Meshes (.obj/.stl) are large and gitignored, so they are
-# fetched at build time by this script. Record the printed commit in
-# assets/manifest.yaml (menagerie_commit) for reproducibility.
+# (BSD-3-Clause). The complete pinned source directories are gitignored and
+# fetched at build time by this script. The default commit must match
+# assets/manifest.yaml (menagerie_commit).
 #
 # Run from anywhere:  bash scripts/fetch_menagerie.sh
 set -euo pipefail
 
-MENAGERIE_REF="${MENAGERIE_REF:-main}"
+DEFAULT_MENAGERIE_REF="71f066ad0be9cd271f7ed58c030243ef157af9f4"
+MENAGERIE_REF="${MENAGERIE_REF:-${DEFAULT_MENAGERIE_REF}}"
+MENAGERIE_REPO="${MENAGERIE_REPO:-https://github.com/google-deepmind/mujoco_menagerie.git}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DST="${REPO_ROOT}/assets/menagerie"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 echo ">> sparse-cloning mujoco_menagerie @ ${MENAGERIE_REF}"
-git clone --depth 1 --filter=blob:none --sparse \
-  "https://github.com/google-deepmind/mujoco_menagerie.git" "$TMP/menagerie"
+git init --quiet "$TMP/menagerie"
+git -C "$TMP/menagerie" remote add origin "$MENAGERIE_REPO"
+git -C "$TMP/menagerie" config remote.origin.promisor true
+git -C "$TMP/menagerie" config remote.origin.partialclonefilter blob:none
+git -C "$TMP/menagerie" sparse-checkout init --cone
 git -C "$TMP/menagerie" sparse-checkout set unitree_go2 unitree_z1
-git -C "$TMP/menagerie" sparse-checkout reapply
+git -C "$TMP/menagerie" fetch --depth 1 --filter=blob:none \
+  origin "$MENAGERIE_REF"
+git -C "$TMP/menagerie" checkout --quiet --detach FETCH_HEAD
 COMMIT="$(git -C "$TMP/menagerie" rev-parse HEAD)"
 echo ">> menagerie commit: ${COMMIT}"
+
+if [[ "$MENAGERIE_REF" =~ ^[0-9a-f]{40}$ && "$COMMIT" != "$MENAGERIE_REF" ]]; then
+  echo ">> ERROR: resolved commit ${COMMIT} does not match ${MENAGERIE_REF}" >&2
+  exit 1
+fi
 
 rm -rf "${DST}/unitree_go2" "${DST}/unitree_z1"
 mkdir -p "${DST}"

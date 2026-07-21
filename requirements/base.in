@@ -1,8 +1,9 @@
 # Application-level dependencies. Resolve and pin these only after the RGC
 # JAX ROCm stack is installed and verified.
-mujoco
-brax
-playground
+mujoco==3.10.0
+mujoco-mjx==3.10.0
+brax==0.14.2
+playground @ git+https://github.com/google-deepmind/mujoco_playground.git@43d180a226da3aae091d918b63c06c3a343519ad
 ml-collections
 numpy
 mediapy

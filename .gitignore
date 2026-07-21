@@ -20,6 +20,9 @@ build/
 dist/
 
 # ---- Large artifacts: store externally and track them via a manifest ----
+# Pinned Menagerie source directories are fetched as complete, ignored trees.
+assets/menagerie/unitree_go2/
+assets/menagerie/unitree_z1/
 *.npz
 *.npy
 *.pt

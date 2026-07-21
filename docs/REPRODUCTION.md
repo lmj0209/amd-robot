@@ -2,12 +2,13 @@
 
 ## Gate G0 fields
 
-> Values are filled only from measured RGC output. `TODO` = not yet captured.
+> Values are filled only from measured RGC output. Unavailable provider fields
+> are identified explicitly instead of being guessed.
 
-- RGC instance: `u-7670-4289a66a` (2026-07-16 probe)
+- RGC provider instance: ephemeral identifier intentionally omitted
 - RGC image: **`amd-oneclick-base:rocm7.2.1-py3.12-v20260416`** — chosen; the
   competition does not mandate a specific image
-- RGC image digest: TODO
+- RGC image digest: **unavailable from inside the instance**; recorded as null
 - GPU: **gfx1100 (RDNA3)**, marketing name "AMD Radeon Graphics", Chip ID 0x744b,
   96 CUs, ~48 GB VRAM → **Radeon PRO W7900** — measured via `rocminfo`
 - ROCm kernel module (ROCk): **6.16.13**; HSA runtime 1.18 — measured
@@ -26,10 +27,10 @@
   The `Failed to import warp/mujoco_warp` notices are harmless — the Warp backend is
   absent on purpose; we use the JAX backend.
 - MuJoCo Playground: installed from git
-  (`pip install git+https://github.com/google-deepmind/mujoco_playground.git`);
-  `CartpoleBalance` loads with `impl=jax`, reset/step finite — TODO pin exact commit
-  in `requirements/rgc.lock`
-- Verified lockfile: TODO (`requirements/rgc.lock`)
+  (`google-deepmind/mujoco_playground@43d180a226da3aae091d918b63c06c3a343519ad`);
+  version 0.2.0, `CartpoleBalance` loads with `impl=jax`, reset/step finite
+- Verified lockfile: `requirements/rgc.lock`, captured from the fixed RGC venv
+  on 2026-07-21
 - `system_info` evidence: captured at commit `18bb8a6` on 2026-07-20;
   image name and digest remain null because RGC does not expose them inside
   the instance.
@@ -50,12 +51,22 @@
   0.2.0), and a Brax PPO update with checkpoint save+reload. **Required shim:**
   brax calls `jax.device_put_replicated`, removed in jax 0.10.2 — we apply the
   official drop-in (`src/amd_robo/platform/_compat.py`, single-GPU safe) before
-  any Brax training. This shim is the basis for a Brax upstream PR (10-pt item).
+  any Brax training. This project-local compatibility shim is separate from
+  the public Brax pmap-axis contribution in
+  https://github.com/google/brax/pull/674, which is awaiting maintainer review.
 
 ## Commands
 
-The exact install, smoke, training, evaluation, and benchmark commands are
-added only after they run successfully from a clean RGC environment.
+Fetch the exact redistributable Go2/Z1 source meshes before loading the model:
+
+```bash
+bash scripts/fetch_menagerie.sh
+```
+
+The script defaults to Menagerie commit
+`71f066ad0be9cd271f7ed58c030243ef157af9f4`, uses sparse checkout, and fails if
+a requested full commit resolves differently. Exact install, smoke, training,
+evaluation, and benchmark commands below are retained only after measured use.
 
 ## Formal ROCm benchmark
 

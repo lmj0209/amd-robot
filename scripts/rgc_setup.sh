@@ -26,7 +26,7 @@ python -m venv .venv
 export HSA_OVERRIDE_GFX_VERSION=11.0.0
 
 # --- 3. JAX-ROCm matching userspace ROCm 7.2.1 (verified: jax 0.10.2) ---
-.venv/bin/pip install -U "jax[rocm7-local]"
+.venv/bin/pip install -U "jax[rocm7-local]==0.10.2"
 
 # --- 4. Verify JAX sees the GPU (Gate G0 core check) ---
 .venv/bin/python -c "import jax; print(jax.devices()); print(jax.default_backend())"
@@ -63,7 +63,8 @@ print("MJX impl:", mx.impl, "| finite:", bool(jnp.isfinite(d.qpos).all()))
 PY
 
 # --- 7. MuJoCo Playground (NOT on PyPI; install from git) ---
-.venv/bin/pip install git+https://github.com/google-deepmind/mujoco_playground.git
+.venv/bin/pip install \
+  git+https://github.com/google-deepmind/mujoco_playground.git@43d180a226da3aae091d918b63c06c3a343519ad
 
 # --- 8. Playground load check (Gate G0) ---
 .venv/bin/python - <<'PY'

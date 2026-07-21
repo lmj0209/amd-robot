@@ -23,7 +23,7 @@ WORKDIR /workspace/amd-robo
 # System Python on this base is externally-managed -> use a venv
 RUN python -m venv /opt/venv \
  && /opt/venv/bin/pip install --upgrade pip \
- && /opt/venv/bin/pip install -U "jax[rocm7-local]" \
+ && /opt/venv/bin/pip install -U "jax[rocm7-local]==0.10.2" \
  && /opt/venv/bin/pip install "mujoco==3.10.0" "brax==0.14.2"
 
 COPY patches/brax-0.14.2-training-state.patch /tmp/
@@ -34,7 +34,7 @@ RUN BRAX_SITE_PACKAGES="$( \
  && patch --directory "$BRAX_SITE_PACKAGES" --strip 0 \
       < /tmp/brax-0.14.2-training-state.patch \
  && /opt/venv/bin/pip install \
-      git+https://github.com/google-deepmind/mujoco_playground.git
+      git+https://github.com/google-deepmind/mujoco_playground.git@43d180a226da3aae091d918b63c06c3a343519ad
 
 ENV PATH=/opt/venv/bin:${PATH}
 

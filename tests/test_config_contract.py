@@ -43,6 +43,84 @@ def test_assembled_robot_matches_the_asset_manifest() -> None:
     )
 
 
+def test_menagerie_fetch_defaults_to_the_manifest_commit() -> None:
+    manifest = yaml.safe_load(
+        (REPO_ROOT / "assets" / "manifest.yaml").read_text()
+    )
+    pinned_commit = manifest["menagerie_commit"]
+    script = (
+        REPO_ROOT / "scripts" / "fetch_menagerie.sh"
+    ).read_text(encoding="utf-8")
+
+    assert f'DEFAULT_MENAGERIE_REF="{pinned_commit}"' in script
+    assert 'origin "$MENAGERIE_REF"' in script
+    assert "checkout --quiet --detach FETCH_HEAD" in script
+    assert '"$COMMIT" != "$MENAGERIE_REF"' in script
+
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "assets/menagerie/unitree_go2/" in gitignore
+    assert "assets/menagerie/unitree_z1/" in gitignore
+
+
+def test_selected_assets_have_pinned_redistribution_metadata() -> None:
+    manifest = yaml.safe_load(
+        (REPO_ROOT / "assets" / "manifest.yaml").read_text()
+    )
+    selected = {
+        asset["id"]: asset
+        for asset in manifest["assets"]
+        if asset["id"] in {"unitree_go2", "unitree_z1_gripper"}
+    }
+
+    assert set(selected) == {"unitree_go2", "unitree_z1_gripper"}
+    for asset in selected.values():
+        assert asset["source_commit"] == manifest["menagerie_commit"]
+        assert asset["license"] == "BSD-3-Clause"
+        assert asset["redistribution"] == "allowed"
+        license_path = REPO_ROOT / asset["license_file"]
+        assert hashlib.sha256(license_path.read_bytes()).hexdigest() == (
+            asset["license_sha256"]
+        )
+
+    assert manifest["excluded_assets"] == [
+        {
+            "id": "b2_piper",
+            "reason": (
+                "not selected; no ATEC, Unitree B2, or AgileX Piper files "
+                "are distributed"
+            ),
+        }
+    ]
+
+
+def test_rgc_lock_and_installers_use_audited_versions() -> None:
+    lock = (REPO_ROOT / "requirements" / "rgc.lock").read_text()
+    required_pins = {
+        "brax==0.14.2",
+        "jax==0.10.2",
+        "jax-rocm7-pjrt==0.10.2",
+        "jax-rocm7-plugin==0.10.2",
+        "jaxlib==0.10.2",
+        "mujoco==3.10.0",
+        "mujoco-mjx==3.10.0",
+        (
+            "playground @ git+https://github.com/google-deepmind/"
+            "mujoco_playground.git@"
+            "43d180a226da3aae091d918b63c06c3a343519ad"
+        ),
+    }
+    assert required_pins <= set(lock.splitlines())
+    assert "git+ssh://" not in lock
+    assert "gh-proxy.com" not in lock
+
+    expected_jax = '"jax[rocm7-local]==0.10.2"'
+    expected_playground_commit = "43d180a226da3aae091d918b63c06c3a343519ad"
+    for relative_path in ("scripts/rgc_setup.sh", "docker/Dockerfile"):
+        installer = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        assert expected_jax in installer
+        assert expected_playground_commit in installer
+
+
 def test_smoke_config_is_fail_closed() -> None:
     config = yaml.safe_load((REPO_ROOT / "configs" / "smoke.yaml").read_text())
     assert config == {

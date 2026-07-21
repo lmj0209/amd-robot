@@ -39,17 +39,24 @@ the policy interface.
   records every frame, phase transition, metric, seed, and artifact hash.
 - `assets/manifest.yaml` and `artifacts/manifest.json` track external files.
 
-The selected robot is Go2 + Z1/gripper. The B2Piper fallback is not maintained.
+The selected robot is Go2 + Z1/gripper. No ATEC, Unitree B2, or AgileX Piper
+asset is included in this repository.
 
 ## Local contract tests
 
 These tests do not prove ROCm support:
 
 ```bash
+bash scripts/fetch_menagerie.sh
 python -m pip install pytest pyyaml
 python -m pip install -e . --no-deps
 python -m pytest
 ```
+
+The fetch script defaults to the Menagerie commit pinned in
+`assets/manifest.yaml` and fails if a requested 40-character commit resolves
+differently. The downloaded source directories are license-verified and
+gitignored; retained license copies live in `assets/licenses/`.
 
 ## Gate G0 on RGC
 
@@ -65,11 +72,13 @@ export XLA_FLAGS="--xla_gpu_enable_command_buffer="
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 /workspace/.venv/bin/python scripts/system_info.py \
-  --image-name TODO_FROM_RGC \
-  --image-digest TODO_FROM_RGC \
+  --image-name amd-oneclick-base:rocm7.2.1-py3.12-v20260416 \
   --config configs/smoke.yaml
 /workspace/.venv/bin/python scripts/smoke_test.py
 ```
+
+RGC did not expose the immutable base-image digest inside this instance, so
+the evidence records that field as `null` instead of inventing a value.
 
 The smoke command returns 0 only if all of these pass:
 
