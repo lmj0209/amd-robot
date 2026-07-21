@@ -16,9 +16,12 @@ The account owner must create and verify these public URLs. Do not replace a
 private resource or publish it without an explicit access decision.
 
 - [x] Public source repository URL: <https://github.com/lmj0209/amd-robot>
-- [ ] Public four-minute video URL: `TBD`
-- [ ] Public checkpoint or artifact URL: `TBD`
-- [ ] Verify each URL in a signed-out browser session.
+- [x] Public four-minute video URL:
+  <https://github.com/lmj0209/amd-robot/releases/download/submission-artifacts-v1/amd_track3_submission_review_v4.mp4>
+- [x] Public checkpoint or artifact URL:
+  <https://github.com/lmj0209/amd-robot/releases/download/submission-artifacts-v1/push_nearfield_v3_params>
+- [x] Verify each URL without GitHub authentication and recheck both downloaded
+  files against their frozen SHA-256 values.
 - [ ] Record the final repository commit and video/checkpoint SHA-256 values.
 
 ## Evidence rules
@@ -46,7 +49,7 @@ private resource or publish it without an explicit access decision.
 
 - [ ] Run the CPU-safe test suite from a clean checkout.
 - [ ] Confirm README reproduction commands match the final public repository.
-- [ ] Confirm the checkpoint SHA-256 is
+- [x] Confirm the checkpoint SHA-256 is
   `f033f9ff1ff23304b05ddeec9346d4f681ec5f4dbe265c5000804317916f9d0b`.
 - [ ] Confirm no secrets, private URLs, temporary files, or withdrawn claims
   are present.

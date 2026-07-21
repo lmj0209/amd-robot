@@ -1,6 +1,27 @@
 {
   "schema_version": 1,
-  "artifacts": [],
+  "artifacts": [
+    {
+      "id": "amd-track3-submission-review-v4",
+      "kind": "video",
+      "url": "https://github.com/lmj0209/amd-robot/releases/download/submission-artifacts-v1/amd_track3_submission_review_v4.mp4",
+      "sha256": "90e949e693d5c0bf6d72cccb4cdc24412bba441622570418d92d287741736c35",
+      "bytes": 8687967,
+      "git_commit": "4ae1aa5239460224a1b4265ec825916e0f2b8855",
+      "config_sha256": "0540742f55ea15d1ba960e69ead686b28a0eee7b0ba0291bb5ff6d5d9748101f",
+      "license": "Copyright 2026 limengjin; all rights reserved"
+    },
+    {
+      "id": "fixed-near-field-v3-policy",
+      "kind": "checkpoint",
+      "url": "https://github.com/lmj0209/amd-robot/releases/download/submission-artifacts-v1/push_nearfield_v3_params",
+      "sha256": "f033f9ff1ff23304b05ddeec9346d4f681ec5f4dbe265c5000804317916f9d0b",
+      "bytes": 1697027,
+      "git_commit": "bfff982122eb72e056db77b79cb82dd874bf0fb0",
+      "config_sha256": "b891d52b9e6c2fd473bedfd891fa70defe9ac74c2f3eb974e96fff5c18c11f83",
+      "license": "MIT"
+    }
+  ],
   "required_fields": [
     "id",
     "kind",
@@ -11,5 +32,5 @@
     "config_sha256",
     "license"
   ],
-  "note": "Checkpoints and videos stay outside Git. Add immutable URLs and SHA256 values after they are produced."
+  "note": "Frozen release assets are stored outside Git and were verified by anonymous full downloads."
 }
