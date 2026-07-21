@@ -52,6 +52,27 @@ def _resolve_evaluation_seed(config_seed: int, override: int | None) -> int:
     return int(config_seed if override is None else override)
 
 
+def _build_direct_eval_policy(ppo_networks, env, ppo_config: dict, params):
+    """Builds deterministic inference without initializing PPO training."""
+    networks = ppo_networks.make_ppo_networks(
+        env.observation_size,
+        env.action_size,
+        policy_hidden_layer_sizes=tuple(
+            ppo_config.get("policy_hidden_layer_sizes", (32, 32, 32, 32))
+        ),
+        value_hidden_layer_sizes=tuple(
+            ppo_config.get(
+                "value_hidden_layer_sizes",
+                (256, 256, 256, 256, 256),
+            )
+        ),
+    )
+    return ppo_networks.make_inference_fn(networks)(
+        params,
+        deterministic=True,
+    )
+
+
 def _make_env(
     config: dict,
     *,
@@ -1672,43 +1693,55 @@ def main() -> int:
             flush=True,
         )
     print(f"{event_prefix}_START timesteps={num_timesteps}", flush=True)
-    make_policy, params, metrics = ppo.train(
-        environment=env,
-        num_timesteps=num_timesteps,
-        max_devices_per_host=1,
-        num_envs=num_envs,
-        episode_length=episode_length,
-        action_repeat=1,
-        learning_rate=learning_rate,
-        learning_rate_schedule=learning_rate_schedule,
-        learning_rate_schedule_min_lr=min(1e-5, learning_rate),
-        learning_rate_schedule_max_lr=learning_rate,
-        desired_kl=desired_kl,
-        entropy_cost=ppo_config["entropy_cost"],
-        discounting=ppo_config["discounting"],
-        unroll_length=ppo_config["unroll_length"],
-        batch_size=batch_size,
-        num_minibatches=num_minibatches,
-        num_updates_per_batch=ppo_config["num_updates_per_batch"],
-        max_grad_norm=ppo_config["max_grad_norm"],
-        normalize_observations=normalize_observations,
-        network_factory=functools.partial(
-            ppo_networks.make_ppo_networks,
-            policy_hidden_layer_sizes=policy_hidden_layer_sizes,
-            value_hidden_layer_sizes=value_hidden_layer_sizes,
-        ),
-        num_evals=brax_num_evals,
-        num_eval_envs=4,
-        run_evals=False,
-        progress_fn=progress,
-        seed=config["seed"],
-        restore_params=restore_params,
-        wrap_env_fn=functools.partial(
-            wrapper.wrap_for_brax_training,
-            full_reset=args.task == "push",
-        ),
-        **training_state_kwargs,
-    )
+    if args.eval_only and args.params_in:
+        params = restore_params
+        metrics = {}
+        policy = _build_direct_eval_policy(
+            ppo_networks,
+            env,
+            ppo_config,
+            params,
+        )
+        print("EVAL_ONLY_DIRECT_POLICY initialized=true", flush=True)
+    else:
+        make_policy, params, metrics = ppo.train(
+            environment=env,
+            num_timesteps=num_timesteps,
+            max_devices_per_host=1,
+            num_envs=num_envs,
+            episode_length=episode_length,
+            action_repeat=1,
+            learning_rate=learning_rate,
+            learning_rate_schedule=learning_rate_schedule,
+            learning_rate_schedule_min_lr=min(1e-5, learning_rate),
+            learning_rate_schedule_max_lr=learning_rate,
+            desired_kl=desired_kl,
+            entropy_cost=ppo_config["entropy_cost"],
+            discounting=ppo_config["discounting"],
+            unroll_length=ppo_config["unroll_length"],
+            batch_size=batch_size,
+            num_minibatches=num_minibatches,
+            num_updates_per_batch=ppo_config["num_updates_per_batch"],
+            max_grad_norm=ppo_config["max_grad_norm"],
+            normalize_observations=normalize_observations,
+            network_factory=functools.partial(
+                ppo_networks.make_ppo_networks,
+                policy_hidden_layer_sizes=policy_hidden_layer_sizes,
+                value_hidden_layer_sizes=value_hidden_layer_sizes,
+            ),
+            num_evals=brax_num_evals,
+            num_eval_envs=4,
+            run_evals=False,
+            progress_fn=progress,
+            seed=config["seed"],
+            restore_params=restore_params,
+            wrap_env_fn=functools.partial(
+                wrapper.wrap_for_brax_training,
+                full_reset=args.task == "push",
+            ),
+            **training_state_kwargs,
+        )
+        policy = make_policy(params, deterministic=True)
     print(f"{event_prefix}_DONE", flush=True)
     for key in sorted(metrics):
         print(f"METRIC {key}: {metrics[key]}", flush=True)
@@ -1719,7 +1752,6 @@ def main() -> int:
         print("LOCOMOTION_SMOKE_DONE eval=skipped", flush=True)
         return 0
 
-    policy = make_policy(params, deterministic=True)
     trained_action = jax.jit(lambda obs: policy(obs, jax.random.PRNGKey(0))[0])
 
     def zero_action(obs):
