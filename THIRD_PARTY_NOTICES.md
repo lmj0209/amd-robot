@@ -29,11 +29,12 @@ claimed as accepted or merged.
 | Unitree Z1 + gripper | BSD-3-Clause | MuJoCo Menagerie at `71f066ad0be9cd271f7ed58c030243ef157af9f4` | yes | attached to Go2 with a coupled gripper actuator |
 | Derived Go2 + Z1 MJCF | BSD-3-Clause | generated from the two pinned models | yes | 19-DoF action contract and task sites |
 
-The required Unitree license texts are retained in `assets/licenses/`. The
-complete fetched source-model directories are gitignored;
-`scripts/fetch_menagerie.sh` fetches only the two selected directories at the
-pinned commit. No ATEC, Unitree B2, or AgileX Piper asset is included or
-distributed by this repository.
+The required Unitree license texts are retained in `assets/licenses/`. The 36
+Go2/Z1 mesh files referenced by the assembled model are distributed in this
+repository and verified against the pinned commit. Unused upstream files stay
+gitignored; `scripts/fetch_menagerie.sh` is an optional pinned refresh/audit
+tool. No ATEC, Unitree B2, or AgileX Piper asset is included or distributed by
+this repository.
 
 ## Policy weights
 

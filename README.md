@@ -47,16 +47,16 @@ asset is included in this repository.
 These tests do not prove ROCm support:
 
 ```bash
-bash scripts/fetch_menagerie.sh
 python -m pip install pytest pyyaml
 python -m pip install -e . --no-deps
 python -m pytest
 ```
 
-The fetch script defaults to the Menagerie commit pinned in
+All 36 Go2/Z1 meshes referenced by the assembled model are included, so a
+clean checkout does not need a network fetch to load the robot. The optional
+`scripts/fetch_menagerie.sh` refresh script defaults to the commit pinned in
 `assets/manifest.yaml` and fails if a requested 40-character commit resolves
-differently. The downloaded source directories are license-verified and
-gitignored; retained license copies live in `assets/licenses/`.
+differently. Retained license copies live in `assets/licenses/`.
 
 ## Gate G0 on RGC
 

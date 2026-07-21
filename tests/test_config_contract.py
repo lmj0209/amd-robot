@@ -10,6 +10,15 @@ yaml = pytest.importorskip("yaml")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _mesh_file_set_sha256(directory: Path) -> tuple[int, int, str]:
+    files = sorted(path for path in directory.iterdir() if path.is_file())
+    digest = hashlib.sha256()
+    for path in files:
+        file_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+        digest.update(f"{path.name}\t{file_sha256}\n".encode())
+    return len(files), sum(path.stat().st_size for path in files), digest.hexdigest()
+
+
 def test_env_config_matches_python_contract() -> None:
     from amd_robo.contracts import ACTION_LAYOUT, REQUIRED_TERMINATION_SIGNALS
 
@@ -62,8 +71,8 @@ def test_menagerie_fetch_defaults_to_the_manifest_commit() -> None:
     assert "http.sslVerify=false" not in script
 
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
-    assert "assets/menagerie/unitree_go2/" in gitignore
-    assert "assets/menagerie/unitree_z1/" in gitignore
+    assert "!assets/menagerie/unitree_go2/assets/*.obj" in gitignore
+    assert "!assets/menagerie/unitree_z1/assets/*.stl" in gitignore
 
 
 def test_selected_assets_have_pinned_redistribution_metadata() -> None:
@@ -85,6 +94,25 @@ def test_selected_assets_have_pinned_redistribution_metadata() -> None:
         assert hashlib.sha256(license_path.read_bytes()).hexdigest() == (
             asset["license_sha256"]
         )
+        mesh_directory = REPO_ROOT / asset["repository_path"] / "assets"
+        file_count, byte_count, file_set_sha256 = _mesh_file_set_sha256(
+            mesh_directory
+        )
+        assert file_count == asset["file_count"]
+        assert byte_count == asset["bytes"]
+        assert file_set_sha256 == asset["file_set_sha256"]
+
+    robot_xml = (
+        REPO_ROOT / "assets" / "menagerie" / "go2_z1" / "go2_z1.xml"
+    ).read_text(encoding="utf-8")
+    mesh_refs = [
+        line.split('file="', 1)[1].split('"', 1)[0]
+        for line in robot_xml.splitlines()
+        if "<mesh " in line and 'file="' in line
+    ]
+    robot_directory = REPO_ROOT / "assets" / "menagerie" / "go2_z1"
+    assert len(mesh_refs) == 36
+    assert all((robot_directory / mesh_ref).is_file() for mesh_ref in mesh_refs)
 
     assert manifest["excluded_assets"] == [
         {

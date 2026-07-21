@@ -9,3 +9,7 @@
 *.npy binary
 *.pt binary
 *.usd binary
+
+# Preserve the exact audited Menagerie mesh bytes on every platform.
+assets/menagerie/unitree_go2/assets/*.obj binary
+assets/menagerie/unitree_z1/assets/*.stl binary

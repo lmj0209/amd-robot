@@ -57,16 +57,18 @@
 
 ## Commands
 
-Fetch the exact redistributable Go2/Z1 source meshes before loading the model:
+The exact 36 redistributable Go2/Z1 meshes required by the assembled model are
+already tracked. To audit or refresh them from the pinned upstream commit:
 
 ```bash
 bash scripts/fetch_menagerie.sh
 ```
 
-The script defaults to Menagerie commit
+This optional script defaults to Menagerie commit
 `71f066ad0be9cd271f7ed58c030243ef157af9f4`, uses sparse checkout, and fails if
-a requested full commit resolves differently. Exact install, smoke, training,
-evaluation, and benchmark commands below are retained only after measured use.
+a requested full commit resolves differently. A clean checkout can load the
+model without running it. Exact install, smoke, training, evaluation, and
+benchmark commands below are retained only after measured use.
 
 ## Formal ROCm benchmark
 

@@ -12,9 +12,12 @@ assets:
     license_file: assets/licenses/unitree_go2.BSD-3-Clause.txt
     license_sha256: 7e2dfda59b98e38d123f539b59ecb637ffd8908d19e09f7765884a309f010d40
     redistribution: allowed
-    files: [go2_mjx.xml, assets/*.obj]
+    files: [assets/*.obj]
     repository_path: assets/menagerie/unitree_go2
-    integrity: pinned_git_commit
+    file_count: 16
+    bytes: 28409145
+    file_set_sha256: ff549d70c4022d47e3ee61462365187c5b0d9d3f601a1bdc2df24e2138e28cd7
+    integrity: tracked_files_verified_against_pinned_git_commit
 
   - id: unitree_z1_gripper
     role: primary_arm_and_gripper
@@ -24,9 +27,12 @@ assets:
     license_file: assets/licenses/unitree_z1.BSD-3-Clause.txt
     license_sha256: 2b794acf1e250f5545ae5a47d81e5685ea5488ce077d1087ed8be5f81e9ba5c0
     redistribution: allowed
-    files: [z1_gripper.xml, assets/*.stl]
+    files: [assets/*.stl]
     repository_path: assets/menagerie/unitree_z1
-    integrity: pinned_git_commit
+    file_count: 20
+    bytes: 12255880
+    file_set_sha256: 3354888a293244d0829179ae23c47cdd471ec030571408a7c731769848e48659
+    integrity: tracked_files_verified_against_pinned_git_commit
 
   - id: go2_z1
     role: assembled_robot_model       # 19 DoF: 12 leg + 6 arm + 1 gripper (G1, 2026-07-17)
@@ -45,6 +51,8 @@ excluded_assets:
     reason: not selected; no ATEC, Unitree B2, or AgileX Piper files are distributed
 
 rules:
-  - Complete Unitree source directories are gitignored and fetched at the pinned commit.
+  - All 36 meshes referenced by go2_z1.xml are tracked in this repository.
+  - Unused upstream files are gitignored; the fetch script refreshes from the pinned commit.
+  - File-set hashes cover sorted lines of relative filename, tab, file SHA-256, newline.
   - The fetch script must fail if a 40-character requested commit resolves differently.
   - Go2/Z1 redistribution retains the bundled BSD-3-Clause license texts.
