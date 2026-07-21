@@ -7,6 +7,7 @@ from amd_robo.evaluation.determinism import (
     array_sha256,
     first_trace_divergence,
     normalized_discrete_outcome,
+    push_evaluation_execution_mode,
     sha256_path,
     trace_sha256,
     trace_summary,
@@ -118,3 +119,36 @@ def test_discrete_outcome_is_stable_across_json_round_trip() -> None:
     assert normalized_discrete_outcome(
         in_memory, fields
     ) == normalized_discrete_outcome(from_json, fields)
+
+
+def test_push_evaluation_execution_mode_is_fail_closed() -> None:
+    assert (
+        push_evaluation_execution_mode(
+            1,
+            determinism_audit=False,
+            allow_batched_diagnostic=False,
+        )
+        == "single_env_qualification"
+    )
+    assert (
+        push_evaluation_execution_mode(
+            16,
+            determinism_audit=True,
+            allow_batched_diagnostic=False,
+        )
+        == "batched_diagnostic"
+    )
+    assert (
+        push_evaluation_execution_mode(
+            16,
+            determinism_audit=False,
+            allow_batched_diagnostic=True,
+        )
+        == "batched_diagnostic"
+    )
+    with pytest.raises(ValueError, match="requires --eval-num-envs 1"):
+        push_evaluation_execution_mode(
+            16,
+            determinism_audit=False,
+            allow_batched_diagnostic=False,
+        )

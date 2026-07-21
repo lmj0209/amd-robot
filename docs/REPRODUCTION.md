@@ -124,7 +124,10 @@ Run a short contract check before the full episode:
   --determinism-audit-dir /workspace/evidence/push-audit-smoke
 ```
 
-The first formal process records all 4,608 control steps for 16 environments:
+The qualification path is deliberately single-environment. On the measured
+gfx1100 stack, a 16-environment Push audit changed discrete outcomes between
+identical interleaved runs, while single-environment GPU runs and a 16-env CPU
+control were stable. The first formal process records all 4,608 control steps:
 
 ```bash
 /workspace/.venv/bin/python scripts/locomotion_learn_smoke.py \
@@ -132,7 +135,7 @@ The first formal process records all 4,608 control steps for 16 environments:
   --config configs/push_stage2_near_field_solver16_qualification.yaml \
   --eval-only \
   --params-in /path/to/push_nearfield_v3_params \
-  --eval-num-envs 16 \
+  --eval-num-envs 1 \
   --eval-num-steps 4608 \
   --determinism-repeats 3 \
   --determinism-audit-dir /workspace/evidence/push-audit-a
@@ -146,7 +149,7 @@ Run a fresh process against that immutable reference:
   --config configs/push_stage2_near_field_solver16_qualification.yaml \
   --eval-only \
   --params-in /path/to/push_nearfield_v3_params \
-  --eval-num-envs 16 \
+  --eval-num-envs 1 \
   --eval-num-steps 4608 \
   --determinism-repeats 3 \
   --determinism-reference-dir /workspace/evidence/push-audit-a \
@@ -158,6 +161,12 @@ parameter SHA256, seed, device, policy order, initial-state fingerprint,
 per-environment discrete outcomes, trace digests, and first exact/1e-6
 divergence. Do not open randomized training while identical inputs produce
 order-dependent success, terminal, abnormal, or maximum-phase classifications.
+
+Batched Push execution is retained only to reproduce and diagnose the gfx1100
+boundary. A determinism audit is already explicit diagnostic intent. Any other
+batched Push evaluation must add `--allow-batched-push-eval`, prints
+`qualification_evidence=false`, and must not be reported as qualification data.
+Regular Push evaluation fails closed unless `--eval-num-envs 1` is selected.
 
 ## Standing qualification and exact resume
 

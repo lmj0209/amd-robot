@@ -51,6 +51,10 @@ Audit identical checkpoint, config, keys, and initial states across policy
 orders, repeated runs, fresh processes, and single versus batched execution.
 Record the first divergent step and field. No new training is allowed while
 policy order changes discrete episode outcomes without an identified cause.
+The measured gfx1100 batched path changes discrete outcomes, while isolated
+single-environment GPU evaluation and the CPU batch control are repeatable.
+Qualification therefore uses single-environment execution; batching is
+diagnostic-only and must be labeled as non-qualification evidence.
 
 ### O2: risk-aware safety governor
 

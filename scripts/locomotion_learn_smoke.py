@@ -29,6 +29,7 @@ from amd_robo.envs.go2_z1_push import Go2Z1PushEnv  # noqa: E402
 from amd_robo.evaluation.determinism import (  # noqa: E402
     first_trace_divergence,
     normalized_discrete_outcome,
+    push_evaluation_execution_mode,
     sha256_path,
     trace_summary,
 )
@@ -1160,6 +1161,14 @@ def main() -> int:
     parser.add_argument("--eval-num-envs", type=int)
     parser.add_argument("--eval-num-steps", type=int)
     parser.add_argument(
+        "--allow-batched-push-eval",
+        action="store_true",
+        help=(
+            "Allow diagnostic-only batched Push evaluation. Results are not "
+            "qualification evidence on gfx1100."
+        ),
+    )
+    parser.add_argument(
         "--determinism-audit-dir",
         help=(
             "Run an interleaved Push-policy determinism audit and write a "
@@ -1330,6 +1339,20 @@ def main() -> int:
             "timesteps must be non-negative; episode length, evaluation size, "
             "learning rate, PPO batch, network, and checkpoint dimensions must "
             "be positive"
+        )
+    push_eval_mode = None
+    if args.task == "push" and not args.skip_eval:
+        try:
+            push_eval_mode = push_evaluation_execution_mode(
+                eval_num_envs,
+                determinism_audit=bool(args.determinism_audit_dir),
+                allow_batched_diagnostic=args.allow_batched_push_eval,
+            )
+        except ValueError as error:
+            parser.error(str(error))
+    elif args.allow_batched_push_eval:
+        parser.error(
+            "--allow-batched-push-eval requires an enabled Push evaluation"
         )
     if batch_size * num_minibatches % num_envs:
         parser.error("batch_size * num_minibatches must be divisible by num_envs")
@@ -1593,6 +1616,12 @@ def main() -> int:
         }
 
     event_prefix = "EVAL_ONLY" if args.eval_only else "LOCOMOTION_TRAINING"
+    if push_eval_mode == "batched_diagnostic":
+        print(
+            "PUSH_BATCHED_EVAL_DIAGNOSTIC_ONLY "
+            f"num_envs={eval_num_envs} qualification_evidence=false",
+            flush=True,
+        )
     print(f"{event_prefix}_START timesteps={num_timesteps}", flush=True)
     make_policy, params, metrics = ppo.train(
         environment=env,

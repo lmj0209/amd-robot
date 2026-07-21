@@ -84,6 +84,27 @@ def normalized_discrete_outcome(
     return {name: np.asarray(record[name]).tolist() for name in field_names}
 
 
+def push_evaluation_execution_mode(
+    num_envs: int,
+    *,
+    determinism_audit: bool,
+    allow_batched_diagnostic: bool,
+) -> str:
+    """Classifies fail-closed Push qualification versus batch diagnostics."""
+
+    if num_envs <= 0:
+        raise ValueError("Push evaluation environment count must be positive")
+    if num_envs == 1:
+        return "single_env_qualification"
+    if determinism_audit or allow_batched_diagnostic:
+        return "batched_diagnostic"
+    raise ValueError(
+        "Push qualification requires --eval-num-envs 1 because gfx1100 "
+        "batched MJX evaluation changed discrete outcomes; use "
+        "--allow-batched-push-eval only for explicit diagnostics"
+    )
+
+
 def _python_scalar(value: np.generic) -> float | int | bool:
     scalar = value.item()
     if isinstance(scalar, (bool, int, float)):
