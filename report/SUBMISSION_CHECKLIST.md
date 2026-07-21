@@ -22,7 +22,8 @@ private resource or publish it without an explicit access decision.
   <https://github.com/lmj0209/amd-robot/releases/download/submission-artifacts-v1/push_nearfield_v3_params>
 - [x] Verify each URL without GitHub authentication and recheck both downloaded
   files against their frozen SHA-256 values.
-- [ ] Record the final repository commit and video/checkpoint SHA-256 values.
+- [x] Record the final repository state with tag `submission-candidate-v1` and
+  publish the video/checkpoint SHA-256 values in `artifacts/manifest.json`.
 
 ## Evidence rules
 
@@ -47,10 +48,13 @@ private resource or publish it without an explicit access decision.
 
 ## Release gate
 
-- [ ] Run the CPU-safe test suite from a clean checkout.
-- [ ] Confirm README reproduction commands match the final public repository.
+- [x] Run the CPU-safe test suite from a clean public checkout: Ruff passed and
+  all 171 tests passed in GitHub Actions run
+  [29827356191](https://github.com/lmj0209/amd-robot/actions/runs/29827356191).
+- [x] Confirm README reproduction commands match the final public repository.
 - [x] Confirm the checkpoint SHA-256 is
   `f033f9ff1ff23304b05ddeec9346d4f681ec5f4dbe265c5000804317916f9d0b`.
-- [ ] Confirm no secrets, private URLs, temporary files, or withdrawn claims
+- [x] Confirm no secrets, private URLs, temporary files, or withdrawn claims
   are present.
-- [ ] Tag the reviewed candidate only after all public links are valid.
+- [x] Tag the reviewed candidate as `submission-candidate-v1` only after all
+  public links and downloaded checksums are valid.
