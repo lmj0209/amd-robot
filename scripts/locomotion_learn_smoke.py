@@ -47,6 +47,11 @@ def _load_config(path: str) -> tuple[dict, str]:
     return yaml.safe_load(payload), hashlib.sha256(payload).hexdigest()
 
 
+def _resolve_evaluation_seed(config_seed: int, override: int | None) -> int:
+    """Selects the committed evaluation seed unless the CLI overrides it."""
+    return int(config_seed if override is None else override)
+
+
 def _make_env(
     config: dict,
     *,
@@ -1195,6 +1200,14 @@ def main() -> int:
     parser.add_argument("--eval-num-envs", type=int)
     parser.add_argument("--eval-num-steps", type=int)
     parser.add_argument(
+        "--eval-seed",
+        type=int,
+        help=(
+            "Override manual_evaluation.seed for an isolated evaluation "
+            "process without changing the training seed."
+        ),
+    )
+    parser.add_argument(
         "--allow-batched-push-eval",
         action="store_true",
         help=(
@@ -1264,6 +1277,7 @@ def main() -> int:
         if args.eval_num_steps is None
         else args.eval_num_steps
     )
+    eval_seed = _resolve_evaluation_seed(evaluation["seed"], args.eval_seed)
     checkpoint_interval_steps = (
         checkpoint["interval_steps"]
         if args.checkpoint_interval_steps is None
@@ -1364,6 +1378,7 @@ def main() -> int:
         or checkpoint_interval_steps <= 0
         or eval_num_envs <= 0
         or eval_num_steps <= 0
+        or eval_seed < 0
         or not policy_hidden_layer_sizes
         or not value_hidden_layer_sizes
         or any(size <= 0 for size in policy_hidden_layer_sizes)
@@ -1372,7 +1387,7 @@ def main() -> int:
         parser.error(
             "timesteps must be non-negative; episode length, evaluation size, "
             "learning rate, PPO batch, network, and checkpoint dimensions must "
-            "be positive"
+            "be positive; evaluation seed must be non-negative"
         )
     push_eval_mode = None
     if args.task == "push" and not args.skip_eval:
@@ -1728,7 +1743,7 @@ def main() -> int:
         print(
             "PUSH_DETERMINISM_AUDIT_START "
             f"num_envs={eval_num_envs} num_steps={eval_num_steps} "
-            f"seed={evaluation['seed']} repeats={args.determinism_repeats} "
+            f"seed={eval_seed} repeats={args.determinism_repeats} "
             f"trace_stride={args.determinism_trace_stride}",
             flush=True,
         )
@@ -1742,7 +1757,7 @@ def main() -> int:
             params_path=args.params_in,
             n_envs=eval_num_envs,
             n_steps=eval_num_steps,
-            seed=evaluation["seed"],
+            seed=eval_seed,
             repeats=args.determinism_repeats,
             trace_stride=args.determinism_trace_stride,
         )
@@ -1789,7 +1804,7 @@ def main() -> int:
     print(
         "LOCOMOTION_EVAL_START implementation=sequential_python_loop "
         f"policies={','.join(action_fns)} num_envs={eval_num_envs} "
-        f"num_steps={eval_num_steps}",
+        f"num_steps={eval_num_steps} seed={eval_seed}",
         flush=True,
     )
     results = _sequential_eval(
@@ -1797,7 +1812,7 @@ def main() -> int:
         action_fns,
         n_envs=eval_num_envs,
         n_steps=eval_num_steps,
-        seed=evaluation["seed"],
+        seed=eval_seed,
         full_reset=args.task == "push",
     )
     for policy_name, policy_metrics in results.items():

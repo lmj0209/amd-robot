@@ -1903,3 +1903,48 @@ def test_trot_dwell_extension_changes_only_additional_budget() -> None:
     qualification_ppo.pop("num_timesteps")
     extension_ppo.pop("num_timesteps")
     assert extension_ppo == qualification_ppo
+
+
+def test_push_two_millimetre_probe_changes_only_initial_object_x() -> None:
+    fixed = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_solver16_qualification.yaml"
+        ).read_text()
+    )
+    probe = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_solver16_position_x_2mm_diagnostic.yaml"
+        ).read_text()
+    )
+
+    assert probe["status"] == (
+        "push_stage2_near_field_solver16_position_x_2mm_diagnostic"
+    )
+    assert probe["push"]["object_position_x_offset_range"] == [-0.002, 0.002]
+    assert probe["push"]["object_position_y_offset_range"] == [0.0, 0.0]
+    assert probe["manual_evaluation"]["num_envs"] == 1
+
+    for section in (
+        "environment",
+        "curriculum",
+        "reward",
+        "ppo",
+        "rocm_guardrails",
+        "checkpoint",
+    ):
+        assert probe[section] == fixed[section]
+
+    fixed_push = dict(fixed["push"])
+    probe_push = dict(probe["push"])
+    probe_push.pop("object_position_x_offset_range")
+    probe_push.pop("object_position_y_offset_range")
+    assert probe_push == fixed_push
+
+    fixed_evaluation = dict(fixed["manual_evaluation"])
+    probe_evaluation = dict(probe["manual_evaluation"])
+    fixed_evaluation["num_envs"] = 1
+    assert probe_evaluation == fixed_evaluation
