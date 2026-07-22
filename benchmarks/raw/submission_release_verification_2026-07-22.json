@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "status": "pass",
+  "checked_at_utc": "2026-07-22T06:36:01.718967+00:00",
+  "anonymous": true,
+  "manifest": "artifacts/manifest.json",
+  "manifest_sha256": "24e648925eef35dfba768f3e62c14bf44c0924025b234aaa6096140a67f463a0",
+  "repository": {
+    "url": "https://github.com/lmj0209/amd-robot",
+    "http_status": 200
+  },
+  "artifacts": [
+    {
+      "id": "amd-track3-submission-review-v4",
+      "url": "https://github.com/lmj0209/amd-robot/releases/download/submission-artifacts-v1/amd_track3_submission_review_v4.mp4",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1302753346/6481c72b-4397-42fb-bbe1-be5f8e6d60e0",
+      "http_status": 200,
+      "bytes": 8687967,
+      "sha256": "90e949e693d5c0bf6d72cccb4cdc24412bba441622570418d92d287741736c35"
+    },
+    {
+      "id": "fixed-near-field-v3-policy",
+      "url": "https://github.com/lmj0209/amd-robot/releases/download/submission-artifacts-v1/push_nearfield_v3_params",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1302753346/6ba46385-08c6-41c6-a980-02c7720af43e",
+      "http_status": 200,
+      "bytes": 1697027,
+      "sha256": "f033f9ff1ff23304b05ddeec9346d4f681ec5f4dbe265c5000804317916f9d0b"
+    }
+  ]
+}

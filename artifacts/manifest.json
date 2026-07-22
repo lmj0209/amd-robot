@@ -32,5 +32,5 @@
     "config_sha256",
     "license"
   ],
-  "note": "Frozen sizes and hashes were verified locally. The intended URLs returned HTTP 404 anonymously on 2026-07-21 and must be reverified before submission."
+  "note": "Anonymous full-download verification passed on 2026-07-22: the public repository returned HTTP 200 and both frozen artifacts matched the declared byte counts and SHA-256 digests. See benchmarks/raw/submission_release_verification_2026-07-22.json."
 }

@@ -60,6 +60,17 @@ def test_anonymous_full_download_checks_hash_bytes_and_headers():
     )
 
 
+def test_release_verifier_drops_ephemeral_redirect_query():
+    signed_url = "https://assets.example/policy?sig=temporary#fragment"
+    result = _download_artifact(
+        _artifact(),
+        timeout=5.0,
+        opener=lambda request, timeout: FakeResponse(b"checkpoint", signed_url),
+    )
+
+    assert result["final_url"] == "https://assets.example/policy"
+
+
 def test_repository_check_requires_nonempty_http_200():
     result = _check_repository(
         "https://public.example/repository",

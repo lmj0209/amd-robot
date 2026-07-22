@@ -13,7 +13,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, BinaryIO
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 REQUIRED_ARTIFACT_FIELDS = {
     "id",
@@ -33,6 +33,13 @@ def _validate_public_https_url(url: str) -> None:
         raise ValueError(f"URL must be public HTTPS: {url}")
     if parsed.username or parsed.password:
         raise ValueError(f"URL must not contain credentials: {url}")
+
+
+def _stable_final_url(url: str) -> str:
+    """Keep redirect provenance without persisting expiring query signatures."""
+    _validate_public_https_url(url)
+    parsed = urlsplit(url)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
 
 
 def _request(url: str) -> urllib.request.Request:
@@ -67,7 +74,7 @@ def _check_repository(
     with opener(_request(url), timeout=timeout) as response:
         status = _response_status(response)
         sample = response.read(4096)
-        final_url = response.geturl()
+        final_url = _stable_final_url(response.geturl())
     if not sample:
         raise ValueError("public repository response was empty")
     return {
@@ -106,7 +113,7 @@ def _download_artifact(
     started = time.perf_counter()
     with opener(_request(artifact["url"]), timeout=timeout) as response:
         status = _response_status(response)
-        final_url = response.geturl()
+        final_url = _stable_final_url(response.geturl())
         while chunk := response.read(1024 * 1024):
             digest.update(chunk)
             downloaded_bytes += len(chunk)
