@@ -280,6 +280,13 @@ def _run_seed(
     return attempt, completed.returncode, walltime
 
 
+def _optional_first(result: dict[str, Any], field: str) -> Any | None:
+    values = result.get(field)
+    if not isinstance(values, (list, tuple)) or len(values) != 1:
+        return None
+    return values[0]
+
+
 def _result_record(seed: int, attempt: Path, result: dict[str, Any]) -> dict[str, Any]:
     return {
         "seed": seed,
@@ -293,6 +300,41 @@ def _result_record(seed: int, attempt: Path, result: dict[str, Any]) -> dict[str
         "initial_object_y": result["push_initial_object_y_by_env"][0],
         "final_goal_distance": result["push_final_goal_distance_by_env"][0],
         "maximum_object_speed": result["push_max_object_speed_by_env"][0],
+        "peak_step": _optional_first(result, "push_peak_step_by_env"),
+        "peak_phase": _optional_first(result, "push_peak_phase_by_env"),
+        "peak_prior_object_speed": _optional_first(
+            result, "push_peak_prior_speed_by_env"
+        ),
+        "peak_object_velocity_x": _optional_first(
+            result, "push_peak_object_velocity_x_by_env"
+        ),
+        "peak_object_velocity_y": _optional_first(
+            result, "push_peak_object_velocity_y_by_env"
+        ),
+        "peak_prior_end_effector_distance": _optional_first(
+            result, "push_peak_prior_end_effector_distance_by_env"
+        ),
+        "peak_end_effector_distance": _optional_first(
+            result, "push_peak_end_effector_distance_by_env"
+        ),
+        "peak_object_displacement": _optional_first(
+            result, "push_peak_object_displacement_by_env"
+        ),
+        "peak_object_height": _optional_first(
+            result, "push_peak_object_height_by_env"
+        ),
+        "peak_goal_distance": _optional_first(
+            result, "push_peak_goal_distance_by_env"
+        ),
+        "peak_leg_action_rms": _optional_first(
+            result, "push_peak_leg_action_rms_by_env"
+        ),
+        "peak_arm_action_rms": _optional_first(
+            result, "push_peak_arm_action_rms_by_env"
+        ),
+        "peak_command_scale": _optional_first(
+            result, "push_peak_command_scale_by_env"
+        ),
         "minimum_object_height": result["push_min_object_height_by_env"][0],
         "maximum_object_height": result["push_max_object_height_by_env"][0],
         "completion_step": result["push_completion_step_by_env"][0],

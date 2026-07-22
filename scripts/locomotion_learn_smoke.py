@@ -1292,6 +1292,7 @@ def _chunked_push_eval(
     n_steps: int,
     seed: int,
     chunk_steps: int,
+    collect_peak_context: bool = False,
 ):
     """Runs bounded JIT scans and returns fail-closed Push evidence.
 
@@ -1362,10 +1363,38 @@ def _chunked_push_eval(
             "action_saturation_count": jnp.zeros((n_envs,), dtype=jnp.int32),
             "action_saturation_total": jnp.zeros((n_envs,)),
         }
+        if collect_peak_context:
+            accumulator.update(
+                {
+                    "peak_phase": jnp.full(
+                        (n_envs,), -1, dtype=jnp.int32
+                    ),
+                    "peak_prior_object_speed": jnp.zeros((n_envs,)),
+                    "peak_object_velocity_x": jnp.zeros((n_envs,)),
+                    "peak_object_velocity_y": jnp.zeros((n_envs,)),
+                    "peak_prior_end_effector_distance": jnp.zeros(
+                        (n_envs,)
+                    ),
+                    "peak_end_effector_distance": jnp.zeros((n_envs,)),
+                    "peak_object_displacement": jnp.zeros((n_envs,)),
+                    "peak_object_height": jnp.zeros((n_envs,)),
+                    "peak_goal_distance": jnp.zeros((n_envs,)),
+                    "peak_leg_action_rms": jnp.zeros((n_envs,)),
+                    "peak_arm_action_rms": jnp.zeros((n_envs,)),
+                    "peak_command_scale": jnp.ones((n_envs,)),
+                }
+            )
 
         def scan_step(carry, _, policy=action_fn):
             current_state, current = carry
             active = current["active"]
+            if collect_peak_context:
+                prior_object_speed = jnp.linalg.norm(
+                    current_state.info["object_qvel"][:, :2], axis=-1
+                )
+                prior_end_effector_distance = current_state.metrics[
+                    "end_effector_to_push_distance"
+                ]
             actions = policy(current_state.obs)
             next_state = wrapped.step(current_state, actions)
             steps = next_state.info["steps"].astype(jnp.int32)
@@ -1384,6 +1413,81 @@ def _chunked_push_eval(
             new_speed_peak = active & (
                 object_speed > current["maximum_object_speed"]
             )
+            peak_context_updates = {}
+            if collect_peak_context:
+                command_scale = jnp.clip(
+                    next_state.info["command"][:, 0] / env._push_command[0],
+                    0.0,
+                    1.0,
+                )
+                leg_action_rms = jnp.sqrt(
+                    jnp.mean(actions[:, :12] ** 2, axis=-1)
+                )
+                arm_action_rms = jnp.sqrt(
+                    jnp.mean(actions[:, 12:] ** 2, axis=-1)
+                )
+                peak_context_updates = {
+                    "peak_phase": jnp.where(
+                        new_speed_peak,
+                        phase,
+                        current["peak_phase"],
+                    ),
+                    "peak_prior_object_speed": jnp.where(
+                        new_speed_peak,
+                        prior_object_speed,
+                        current["peak_prior_object_speed"],
+                    ),
+                    "peak_object_velocity_x": jnp.where(
+                        new_speed_peak,
+                        next_state.info["object_qvel"][:, 0],
+                        current["peak_object_velocity_x"],
+                    ),
+                    "peak_object_velocity_y": jnp.where(
+                        new_speed_peak,
+                        next_state.info["object_qvel"][:, 1],
+                        current["peak_object_velocity_y"],
+                    ),
+                    "peak_prior_end_effector_distance": jnp.where(
+                        new_speed_peak,
+                        prior_end_effector_distance,
+                        current["peak_prior_end_effector_distance"],
+                    ),
+                    "peak_end_effector_distance": jnp.where(
+                        new_speed_peak,
+                        next_state.metrics["end_effector_to_push_distance"],
+                        current["peak_end_effector_distance"],
+                    ),
+                    "peak_object_displacement": jnp.where(
+                        new_speed_peak,
+                        next_state.metrics["object_displacement"],
+                        current["peak_object_displacement"],
+                    ),
+                    "peak_object_height": jnp.where(
+                        new_speed_peak,
+                        object_height,
+                        current["peak_object_height"],
+                    ),
+                    "peak_goal_distance": jnp.where(
+                        new_speed_peak,
+                        goal_distance,
+                        current["peak_goal_distance"],
+                    ),
+                    "peak_leg_action_rms": jnp.where(
+                        new_speed_peak,
+                        leg_action_rms,
+                        current["peak_leg_action_rms"],
+                    ),
+                    "peak_arm_action_rms": jnp.where(
+                        new_speed_peak,
+                        arm_action_rms,
+                        current["peak_arm_action_rms"],
+                    ),
+                    "peak_command_scale": jnp.where(
+                        new_speed_peak,
+                        command_scale,
+                        current["peak_command_scale"],
+                    ),
+                }
 
             phase_ids = jnp.arange(len(TaskPhase), dtype=jnp.int32)[:, None]
             reached_phase = active[None, :] & (phase[None, :] >= phase_ids)
@@ -1442,6 +1546,7 @@ def _chunked_push_eval(
                     steps,
                     current["peak_object_speed_step"],
                 ),
+                **peak_context_updates,
                 "minimum_object_height": jnp.where(
                     active,
                     jnp.minimum(current["minimum_object_height"], object_height),
@@ -1630,6 +1735,49 @@ def _chunked_push_eval(
                 / max(int(np.sum(active_steps)), 1)
             ),
         }
+        if collect_peak_context:
+            result.update(
+                {
+                    "push_peak_phase_by_env": _integer_tuple(
+                        accumulator["peak_phase"]
+                    ),
+                    "push_peak_prior_speed_by_env": _float_tuple(
+                        accumulator["peak_prior_object_speed"]
+                    ),
+                    "push_peak_object_velocity_x_by_env": _float_tuple(
+                        accumulator["peak_object_velocity_x"]
+                    ),
+                    "push_peak_object_velocity_y_by_env": _float_tuple(
+                        accumulator["peak_object_velocity_y"]
+                    ),
+                    "push_peak_prior_end_effector_distance_by_env": (
+                        _float_tuple(
+                            accumulator["peak_prior_end_effector_distance"]
+                        )
+                    ),
+                    "push_peak_end_effector_distance_by_env": _float_tuple(
+                        accumulator["peak_end_effector_distance"]
+                    ),
+                    "push_peak_object_displacement_by_env": _float_tuple(
+                        accumulator["peak_object_displacement"]
+                    ),
+                    "push_peak_object_height_by_env": _float_tuple(
+                        accumulator["peak_object_height"]
+                    ),
+                    "push_peak_goal_distance_by_env": _float_tuple(
+                        accumulator["peak_goal_distance"]
+                    ),
+                    "push_peak_leg_action_rms_by_env": _float_tuple(
+                        accumulator["peak_leg_action_rms"]
+                    ),
+                    "push_peak_arm_action_rms_by_env": _float_tuple(
+                        accumulator["peak_arm_action_rms"]
+                    ),
+                    "push_peak_command_scale_by_env": _float_tuple(
+                        accumulator["peak_command_scale"]
+                    ),
+                }
+            )
         first_phase_steps = accumulator["first_phase_steps"]
         for phase in TaskPhase:
             result[f"push_first_{phase.name.lower()}_step_by_env"] = tuple(
@@ -1745,6 +1893,14 @@ def main() -> int:
         "--eval-chunk-steps",
         type=int,
         help="Control steps per bounded JIT scan for chunked Push evaluation.",
+    )
+    parser.add_argument(
+        "--eval-peak-diagnostics",
+        action="store_true",
+        help=(
+            "Collect extra context at the object-speed peak. This changes the "
+            "compiled diagnostic path and is excluded from formal matrices."
+        ),
     )
     parser.add_argument(
         "--eval-output-dir",
@@ -1915,6 +2071,13 @@ def main() -> int:
         parser.error("--eval-output-dir requires --eval-implementation chunked_jit")
     if args.eval_output_dir and Path(args.eval_output_dir).exists():
         parser.error("--eval-output-dir must not already exist")
+    if args.eval_peak_diagnostics and (
+        eval_implementation != "chunked_jit" or not args.eval_output_dir
+    ):
+        parser.error(
+            "--eval-peak-diagnostics requires chunked JIT and "
+            "--eval-output-dir"
+        )
     if args.determinism_audit_dir:
         if args.task != "push":
             parser.error("determinism audit is only available for --task push")
@@ -2395,7 +2558,8 @@ def main() -> int:
             "PUSH_QUALIFICATION_START implementation=chunked_jit "
             f"policies={','.join(action_fns)} num_envs={eval_num_envs} "
             f"num_steps={eval_num_steps} seed={eval_seed} "
-            f"chunk_steps={eval_chunk_steps}",
+            f"chunk_steps={eval_chunk_steps} "
+            f"peak_diagnostics={args.eval_peak_diagnostics}",
             flush=True,
         )
         started = time.perf_counter()
@@ -2406,6 +2570,7 @@ def main() -> int:
             n_steps=eval_num_steps,
             seed=eval_seed,
             chunk_steps=eval_chunk_steps,
+            collect_peak_context=args.eval_peak_diagnostics,
         )
         walltime_seconds = time.perf_counter() - started
         for policy_name, policy_metrics in results.items():

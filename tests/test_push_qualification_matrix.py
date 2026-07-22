@@ -9,6 +9,7 @@ from scripts.push_qualification_matrix import (
     _absolute_without_resolving_symlinks,
     _load_valid_attempt,
     _next_attempt,
+    _optional_first,
     _seed_sequence,
     _summary,
     _validate_matrix_spec,
@@ -102,6 +103,16 @@ def test_python_path_is_made_absolute_without_resolving_it(tmp_path, monkeypatch
     monkeypatch.chdir(tmp_path)
     interpreter = _absolute_without_resolving_symlinks("venv/bin/python")
     assert interpreter == tmp_path / "venv" / "bin" / "python"
+
+
+def test_optional_peak_context_is_backward_compatible():
+    assert _optional_first({}, "push_peak_phase_by_env") is None
+    assert _optional_first(
+        {"push_peak_phase_by_env": [2]}, "push_peak_phase_by_env"
+    ) == 2
+    assert _optional_first(
+        {"push_peak_phase_by_env": [1, 2]}, "push_peak_phase_by_env"
+    ) is None
 
 
 def test_valid_seed_manifest_is_bound_to_rocm_inputs():
