@@ -181,6 +181,57 @@ batched Push evaluation must add `--allow-batched-push-eval`, prints
 `qualification_evidence=false`, and must not be reported as qualification data.
 Regular Push evaluation fails closed unless `--eval-num-envs 1` is selected.
 
+## Chunked single-environment Push matrix
+
+The bounded JIT evaluator keeps the qualification semantics at one environment
+while compiling two control steps at a time. It is a separate implementation
+from the sequential audit above and must first reproduce its discrete outcome
+and safety classifications. A single cross-validation episode is:
+
+```bash
+export JAX_COMPILATION_CACHE_DIR=/workspace/evidence/jax-push-qualification-cache
+
+/workspace/.venv/bin/python scripts/locomotion_learn_smoke.py \
+  --task push \
+  --config configs/push_stage2_near_field_solver16_position_x_2mm_diagnostic.yaml \
+  --eval-only \
+  --params-in /path/to/push_nearfield_v3_params \
+  --eval-policy trained \
+  --eval-num-envs 1 \
+  --eval-num-steps 4608 \
+  --eval-seed 777 \
+  --eval-implementation chunked_jit \
+  --eval-chunk-steps 2 \
+  --eval-output-dir /workspace/evidence/push-chunked-cross-validation-777
+```
+
+The output directory must not exist. The manifest binds the commit, config and
+parameter hashes, seed, JAX backend, the single ROCm device, every registered
+safety gate, and the final task decision. A persistent compilation cache only
+avoids repeating the measured multi-minute gfx1100 compilation; it does not
+change the seed, state shape, device count, or qualification gates.
+
+After cross-validation, predeclare a held-out seed range and run each episode
+in a fresh process. This example reserves seeds `2026072200..2026072299`, which
+do not overlap the training seed or development seeds 777/778:
+
+```bash
+/workspace/.venv/bin/python scripts/push_qualification_matrix.py \
+  --config configs/push_stage2_near_field_solver16_position_x_2mm_diagnostic.yaml \
+  --params-in /path/to/push_nearfield_v3_params \
+  --output-dir /workspace/evidence/push-2mm-heldout-100 \
+  --seed-start 2026072200 \
+  --seed-count 100 \
+  --num-steps 4608 \
+  --chunk-steps 2
+```
+
+The launcher never overwrites an attempt. It validates each per-seed exit code
+and manifest before aggregation, reports all gate failures, and exits nonzero
+unless the complete matrix passes. If the launcher is interrupted, repeat the
+same command with `--resume`; the immutable specification must still match the
+commit, inputs, seed range, and execution shape exactly.
+
 ## Standing qualification and exact resume
 
 The gfx1100-safe standing run consumes the committed configuration, bounds every

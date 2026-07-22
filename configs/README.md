@@ -22,8 +22,9 @@ and RGC system fingerprint.
 - `push_stage2_near_field_solver16_position_x_2mm_diagnostic.yaml`: frozen-v3
   evaluation-only probe that changes only the initial box x-offset range to
   `[-0.002, 0.002]` metres. Run one environment per fresh process with
-  `--eval-seed`; it is not qualification evidence until the seed sweep is
-  completed and archived.
+  `scripts/push_qualification_matrix.py`; it is not qualification evidence
+  until the predeclared seed sweep is completed, passes every gate, and is
+  archived.
 - `locomotion_stage1_low_speed.yaml`: the first `0.1 m/s` qualification slice
   of the staged `0.1 -> 0.2 -> 0.4 m/s` command curriculum. It resumes the
   complete accepted v14 training session.
