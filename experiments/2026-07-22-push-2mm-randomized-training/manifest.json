@@ -15,6 +15,7 @@
   },
   "qualification": {
     "config_path": "configs/push_stage2_near_field_solver16_position_x_2mm_diagnostic.yaml",
+    "config_sha256": "fe732e47c1398f5f8f15bda88bb1c424a9e36952dd03175a0fdd42b367793c42",
     "num_envs": 1,
     "num_steps": 4608,
     "implementation": "chunked_jit",

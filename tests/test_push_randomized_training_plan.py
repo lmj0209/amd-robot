@@ -34,6 +34,12 @@ def test_randomized_training_plan_binds_the_committed_config() -> None:
         "episode_length"
     ]
 
+    qualification = plan["qualification"]
+    qualification_path = REPO_ROOT / qualification["config_path"]
+    assert hashlib.sha256(qualification_path.read_bytes()).hexdigest() == (
+        qualification["config_sha256"]
+    )
+
 
 def test_randomized_training_plan_keeps_qualification_seeds_blind() -> None:
     plan = json.loads((EXPERIMENT_ROOT / "manifest.json").read_text())
