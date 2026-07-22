@@ -58,6 +58,12 @@ def _seed_sequence(seed_start: int, seed_count: int) -> list[int]:
     return seeds
 
 
+def _absolute_without_resolving_symlinks(path: str | Path) -> Path:
+    """Keeps virtual-environment interpreter symlinks intact."""
+
+    return Path(os.path.abspath(os.fspath(path)))
+
+
 def _matrix_spec(
     *,
     repo_root: Path,
@@ -413,7 +419,7 @@ def main() -> int:
     config = Path(args.config).resolve()
     params = Path(args.params_in).resolve()
     output_root = Path(args.output_dir).resolve()
-    python = Path(args.python).resolve()
+    python = _absolute_without_resolving_symlinks(args.python)
     runner = Path(args.runner).resolve()
     seeds = _seed_sequence(args.seed_start, args.seed_count)
     if args.num_steps <= 0:

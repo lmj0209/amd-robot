@@ -6,6 +6,7 @@ from copy import deepcopy
 import pytest
 
 from scripts.push_qualification_matrix import (
+    _absolute_without_resolving_symlinks,
     _load_valid_attempt,
     _next_attempt,
     _seed_sequence,
@@ -95,6 +96,12 @@ def test_seed_sequence_is_predeclared_and_bounded():
         _seed_sequence(100, 0)
     with pytest.raises(ValueError, match="32-bit"):
         _seed_sequence(2**31 - 1, 2)
+
+
+def test_python_path_is_made_absolute_without_resolving_it(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    interpreter = _absolute_without_resolving_symlinks("venv/bin/python")
+    assert interpreter == tmp_path / "venv" / "bin" / "python"
 
 
 def test_valid_seed_manifest_is_bound_to_rocm_inputs():
