@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "status": "pre_registered",
+  "objective": "Train one fresh policy on the measured two-millimetre initial box x-offset range without changing the frozen reward, solver, PPO budget, or safety gates.",
+  "hypothesis": "Exposing PPO to the held-out reset perturbation will reduce contact-loss and speed-spike failures without post-processing the command or relaxing qualification thresholds.",
+  "candidate": {
+    "initialization": "fresh",
+    "config_path": "configs/push_stage2_near_field_position_x_2mm_training.yaml",
+    "config_sha256": "443e9c7c6425a6c2482f6d88ee5da5fe31e8cca3369f55e038f917a1d746703e",
+    "training_seed": 0,
+    "num_timesteps": 73728,
+    "num_envs": 16,
+    "episode_length": 4608,
+    "params_output_name": "push_nearfield_position_x_2mm_params"
+  },
+  "qualification": {
+    "config_path": "configs/push_stage2_near_field_solver16_position_x_2mm_diagnostic.yaml",
+    "num_envs": 1,
+    "num_steps": 4608,
+    "implementation": "chunked_jit",
+    "chunk_steps": 2,
+    "screening": {
+      "seed_start": 2026072400,
+      "seed_count": 20,
+      "required_gate_pass_count": 20,
+      "required_runtime_failure_count": 0
+    },
+    "blind": {
+      "seed_start": 2026073000,
+      "seed_count": 100,
+      "required_gate_pass_count": 100,
+      "required_runtime_failure_count": 0
+    }
+  },
+  "decision_rules": {
+    "run_blind_only_after_screening_pass": true,
+    "promote_only_after_blind_pass": true,
+    "change_goal_threshold": false,
+    "change_object_speed_limit": false,
+    "change_object_height_tolerance": false,
+    "reuse_development_failure_seeds_for_qualification": false,
+    "move_existing_submission_tag": false
+  }
+}

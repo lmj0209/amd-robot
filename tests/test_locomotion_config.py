@@ -1948,3 +1948,46 @@ def test_push_two_millimetre_probe_changes_only_initial_object_x() -> None:
     probe_evaluation = dict(probe["manual_evaluation"])
     fixed_evaluation["num_envs"] = 1
     assert probe_evaluation == fixed_evaluation
+
+
+def test_push_two_millimetre_training_changes_only_initial_object_x() -> None:
+    fixed = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_qualification.yaml"
+        ).read_text()
+    )
+    randomized = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "configs"
+            / "push_stage2_near_field_position_x_2mm_training.yaml"
+        ).read_text()
+    )
+
+    assert randomized["status"] == (
+        "push_stage2_near_field_position_x_2mm_training"
+    )
+    assert randomized["push"]["object_position_x_offset_range"] == [
+        -0.002,
+        0.002,
+    ]
+    assert randomized["push"]["object_position_y_offset_range"] == [0.0, 0.0]
+
+    for section in (
+        "environment",
+        "curriculum",
+        "reward",
+        "ppo",
+        "rocm_guardrails",
+        "manual_evaluation",
+        "checkpoint",
+    ):
+        assert randomized[section] == fixed[section]
+
+    fixed_push = dict(fixed["push"])
+    randomized_push = dict(randomized["push"])
+    randomized_push.pop("object_position_x_offset_range")
+    randomized_push.pop("object_position_y_offset_range")
+    assert randomized_push == fixed_push

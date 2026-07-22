@@ -25,6 +25,11 @@ and RGC system fingerprint.
   `scripts/push_qualification_matrix.py`; it is not qualification evidence
   until the predeclared seed sweep is completed, passes every gate, and is
   archived.
+- `push_stage2_near_field_position_x_2mm_training.yaml`: fresh-policy,
+  single-variable candidate that adds only the same `[-0.002, 0.002]` metre
+  initial box x-offset range to the frozen-v3 training objective. Reward,
+  solver, PPO budget, and all safety limits remain unchanged. Qualification
+  still uses the independent solver16 diagnostic config and fresh processes.
 - `locomotion_stage1_low_speed.yaml`: the first `0.1 m/s` qualification slice
   of the staged `0.1 -> 0.2 -> 0.4 m/s` command curriculum. It resumes the
   complete accepted v14 training session.
