@@ -11,7 +11,10 @@ Review status: a credited silent v4 candidate was rendered from commit
 over 239.65 seconds, including all 813 rollout frames. Its SHA-256 is
 `90e949e693d5c0bf6d72cccb4cdc24412bba441622570418d92d287741736c35`.
 The verified credit is `limengjin — Solo developer`. Public repository,
-video, and checkpoint links still need to be supplied before submission.
+video, and checkpoint URLs all returned HTTP 404 in an anonymous check on
+2026-07-21 and remain release blockers. This v4 render also predates the
+bounded-JIT seed-matrix evaluator; do not submit it unchanged if that matrix
+produces a reportable aggregate result.
 
 | Time | Visual | On-screen message |
 |---|---|---|
@@ -110,3 +113,6 @@ for contact-rich physical AI on Radeon.
 - Keep the complete 813-frame rollout segment intact.
 - Do not present the legacy 20-environment batch as qualification evidence.
 - Verify the final MP4 by decoding every frame and record its SHA-256.
+- After the held-out matrix decision, either preserve the disclosed limitation
+  or render a new evidence card from the completed aggregate; never mix v4
+  visuals with newer claims.

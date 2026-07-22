@@ -317,9 +317,9 @@ def _limitations_slide() -> Image.Image:
         [
             "No randomized-box qualification",
             "No perception, sim-to-real result, or hardware safety certificate",
-            "The 100-episode expansion awaits stable sequential randomization",
+            "The held-out 100-episode matrix is not yet complete",
             "Large fused PPO scans are outside the validated gfx1100 boundary",
-            "The optional upstream report remains paused",
+            "Brax PR #674 is open and has not been reviewed or merged",
         ],
         y=137,
         width=72,

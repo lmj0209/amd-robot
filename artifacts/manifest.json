@@ -32,5 +32,5 @@
     "config_sha256",
     "license"
   ],
-  "note": "Frozen release assets are stored outside Git and were verified by anonymous full downloads."
+  "note": "Frozen sizes and hashes were verified locally. The intended URLs returned HTTP 404 anonymously on 2026-07-21 and must be reverified before submission."
 }

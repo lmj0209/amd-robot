@@ -15,15 +15,19 @@
 The account owner must create and verify these public URLs. Do not replace a
 private resource or publish it without an explicit access decision.
 
-- [x] Public source repository URL: <https://github.com/lmj0209/amd-robot>
-- [x] Public four-minute video URL:
+- [ ] Public source repository URL: <https://github.com/lmj0209/amd-robot>
+  (anonymous HTTP check returned 404 on 2026-07-21).
+- [ ] Public four-minute video URL:
   <https://github.com/lmj0209/amd-robot/releases/download/submission-artifacts-v1/amd_track3_submission_review_v4.mp4>
-- [x] Public checkpoint or artifact URL:
+  (anonymous HTTP check returned 404 on 2026-07-21).
+- [ ] Public checkpoint or artifact URL:
   <https://github.com/lmj0209/amd-robot/releases/download/submission-artifacts-v1/push_nearfield_v3_params>
-- [x] Verify each URL without GitHub authentication and recheck both downloaded
+  (anonymous HTTP check returned 404 on 2026-07-21).
+- [ ] Verify each URL without GitHub authentication and recheck both downloaded
   files against their frozen SHA-256 values.
-- [x] Record the final repository state with tag `submission-candidate-v1` and
-  publish the video/checkpoint SHA-256 values in `artifacts/manifest.json`.
+- [x] Preserve the historical `submission-candidate-v1` tag and the frozen
+  video/checkpoint SHA-256 values in `artifacts/manifest.json`; do not move that
+  tag. A new candidate tag is required after the current gates pass.
 
 ## Evidence rules
 
@@ -48,13 +52,13 @@ private resource or publish it without an explicit access decision.
 
 ## Release gate
 
-- [x] Run the CPU-safe test suite from a clean public checkout: Ruff passed and
-  all 171 tests passed in GitHub Actions run
+- [ ] Rerun the CPU-safe suite from the new public candidate. The previous
+  candidate recorded Ruff plus 171 passing tests in GitHub Actions run
   [29827356191](https://github.com/lmj0209/amd-robot/actions/runs/29827356191).
-- [x] Confirm README reproduction commands match the final public repository.
+- [ ] Confirm README reproduction commands match the new public candidate.
 - [x] Confirm the checkpoint SHA-256 is
   `f033f9ff1ff23304b05ddeec9346d4f681ec5f4dbe265c5000804317916f9d0b`.
-- [x] Confirm no secrets, private URLs, temporary files, or withdrawn claims
-  are present.
-- [x] Tag the reviewed candidate as `submission-candidate-v1` only after all
-  public links and downloaded checksums are valid.
+- [ ] Repeat the secret/private-URL/temporary-file/withdrawn-claim audit on the
+  new candidate.
+- [ ] Create a new immutable reviewed-candidate tag only after all public links,
+  anonymous downloads, checksums, tests, and evidence gates are valid.

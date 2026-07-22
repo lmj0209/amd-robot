@@ -242,7 +242,7 @@ and a real-robot safety layer.
 
 ## 9. Reproducibility and deliverables
 
-The public repository contains:
+The reviewed source tree contains:
 
 - MJX robot/task environments and the model assembly script;
 - versioned standing, locomotion, and Push configurations;
@@ -268,20 +268,21 @@ in `THIRD_PARTY_NOTICES.md` and `assets/manifest.yaml`.
    batched 20-environment result is diagnostic-only.
 2. Randomized box placement is not qualified.
 3. Evaluation is state-based and simulation-only.
-4. The formal 100-episode expansion is paused pending a stable sequential
-   evaluation design and randomized task qualification.
+4. A bounded-JIT, single-environment evaluator now makes the formal
+   100-episode expansion practical, but its cross-validation and held-out
+   matrix are not yet complete and no aggregate result is claimed here.
 5. Large fused reverse-mode PPO graphs are not validated on this gfx1100
    software stack.
 6. RGC did not expose the base image digest inside the instance.
-7. Brax PR #674 is public and tested but is awaiting upstream maintainer review.
+7. Brax PR #674 is public, tested, and open without an upstream review.
 
 These items are release gates, not hidden follow-up optimizations.
 
 ## 11. Team contribution record
 
-The repository does not contain verified participant names, so this draft does
-not invent individual attribution. Before final submission, the team must add
-the official team name, every member's name, and a concise mapping from members
-to model/environment engineering, PPO/ROCm engineering, evaluation, and
-documentation. This metadata-only edit does not change the measured technical
-claims above.
+This is a solo-developer entry credited to the verified public handle
+`limengjin`. The contribution covers application scoping, robot/model assembly,
+the Playground-style task environment, Brax PPO and ROCm integration,
+evaluation and evidence tooling, benchmarking, documentation, and the public
+Brax PR #674. The official competition profile must use the account owner's
+registered identity; this report does not invent a different legal name.
