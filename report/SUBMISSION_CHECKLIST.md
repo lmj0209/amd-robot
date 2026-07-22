@@ -24,7 +24,8 @@ private resource or publish it without an explicit access decision.
   <https://github.com/lmj0209/amd-robot/releases/download/submission-artifacts-v1/push_nearfield_v3_params>
   (anonymous HTTP check returned 404 on 2026-07-21).
 - [ ] Verify each URL without GitHub authentication and recheck both downloaded
-  files against their frozen SHA-256 values.
+  files against their frozen SHA-256 values with
+  `scripts/verify_submission_release.py`; retain its immutable JSON result.
 - [x] Preserve the historical `submission-candidate-v1` tag and the frozen
   video/checkpoint SHA-256 values in `artifacts/manifest.json`; do not move that
   tag. A new candidate tag is required after the current gates pass.

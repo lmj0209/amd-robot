@@ -3,3 +3,15 @@
 Large checkpoints and videos are not committed. Every published artifact must
 be listed in `manifest.json` with an immutable URL, SHA256, size, source commit,
 config hash, and license. A missing checksum makes an artifact non-reproducible.
+
+After the repository and release are public, verify them without a GitHub
+session and write a new immutable evidence file:
+
+```bash
+python scripts/verify_submission_release.py \
+  --manifest artifacts/manifest.json \
+  --output /workspace/evidence/submission-release-verification.json
+```
+
+The verifier performs full downloads and fails on HTTP status, size, or
+SHA-256 mismatch. The output path must not already exist.
