@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -1192,6 +1193,513 @@ def _sequential_eval(
     return results
 
 
+def _validate_chunked_push_eval(
+    *,
+    n_envs: int,
+    n_steps: int,
+    chunk_steps: int,
+) -> None:
+    """Rejects execution shapes that cannot be qualification evidence."""
+
+    if n_envs != 1:
+        raise ValueError("chunked Push qualification requires exactly one environment")
+    if n_steps <= 0:
+        raise ValueError("chunked Push qualification steps must be positive")
+    if not 1 <= chunk_steps <= 64:
+        raise ValueError("chunked Push qualification chunk size must be in [1, 64]")
+
+
+def _integer_tuple(values) -> tuple[int, ...]:
+    return tuple(int(value) for value in values)
+
+
+def _float_tuple(values) -> tuple[float, ...]:
+    return tuple(float(value) for value in values)
+
+
+def _json_compatible(value):
+    """Replaces non-finite scalars with null for standards-compliant JSON."""
+
+    if isinstance(value, dict):
+        return {key: _json_compatible(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_json_compatible(item) for item in value]
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, float) and not np.isfinite(value):
+        return None
+    return value
+
+
+def _push_qualification_gates(
+    result: dict[str, object],
+    *,
+    goal_threshold: float,
+    object_speed_limit: float,
+    object_height_tolerance: float,
+) -> dict[str, bool]:
+    """Applies predeclared one-episode safety and task gates."""
+
+    if goal_threshold <= 0.0 or object_speed_limit <= 0.0:
+        raise ValueError("qualification distance and speed limits must be positive")
+    if object_height_tolerance <= 0.0:
+        raise ValueError("qualification height tolerance must be positive")
+
+    final_goal_distance = float(result["push_final_goal_distance_by_env"][0])
+    maximum_object_speed = float(result["push_max_object_speed_by_env"][0])
+    minimum_object_height = float(result["push_min_object_height_by_env"][0])
+    maximum_object_height = float(result["push_max_object_height_by_env"][0])
+    finite_values = np.asarray(
+        [
+            final_goal_distance,
+            maximum_object_speed,
+            minimum_object_height,
+            maximum_object_height,
+            float(result["max_tilt_deg"]),
+            float(result["max_abs_action"]),
+        ]
+    )
+    target_height = 0.1
+    gates = {
+        "single_environment": int(result["push_episode_count"]) == 1,
+        "task_success": int(result["push_success_count"]) == 1,
+        "successful_terminal": (
+            int(result["push_terminal_count"]) == 1
+            and int(result["push_abnormal_termination_count"]) == 0
+        ),
+        "goal_distance": final_goal_distance <= goal_threshold,
+        "object_speed": maximum_object_speed <= object_speed_limit,
+        "object_height": (
+            minimum_object_height >= target_height - object_height_tolerance
+            and maximum_object_height
+            <= target_height + object_height_tolerance
+        ),
+        "illegal_contact": int(result["illegal_contact_count"]) == 0,
+        "workspace_bounds": int(result["workspace_bounds_count"]) == 0,
+        "finite_state": int(result["nonfinite_state_count"]) == 0,
+        "finite_action": int(result["nonfinite_action_count"]) == 0,
+        "unsaturated_action": int(result["action_saturation_count"]) == 0,
+        "finite_summary": bool(np.all(np.isfinite(finite_values))),
+    }
+    return gates
+
+
+def _chunked_push_eval(
+    env,
+    action_fns,
+    *,
+    n_envs: int,
+    n_steps: int,
+    seed: int,
+    chunk_steps: int,
+):
+    """Runs bounded JIT scans and returns fail-closed Push evidence.
+
+    This path deliberately supports only one environment.  gfx1100 batched
+    Push execution changed discrete outcomes, so batching remains a benchmark
+    diagnostic rather than qualification evidence.
+    """
+
+    from mujoco_playground import wrapper
+
+    _validate_chunked_push_eval(
+        n_envs=n_envs,
+        n_steps=n_steps,
+        chunk_steps=chunk_steps,
+    )
+    wrapped = wrapper.wrap_for_brax_training(
+        env,
+        episode_length=n_steps + 1,
+        action_repeat=1,
+        full_reset=True,
+    )
+    reset_fn = jax.jit(wrapped.reset)
+    keys = jax.random.split(jax.random.PRNGKey(seed), n_envs)
+    initial_state = reset_fn(keys)
+    if "task_phase" not in initial_state.metrics:
+        raise ValueError("chunked qualification requires a Push environment")
+
+    results = {}
+    for policy_name, action_fn in action_fns.items():
+        state = initial_state
+        first_phase_steps = jnp.full(
+            (len(TaskPhase), n_envs),
+            -1,
+            dtype=jnp.int32,
+        ).at[int(TaskPhase.APPROACH)].set(jnp.zeros(n_envs, dtype=jnp.int32))
+        initial_object_position = state.info["object_pos"][:, :2]
+        accumulator = {
+            "active": jnp.ones((n_envs,), dtype=bool),
+            "success": jnp.zeros((n_envs,), dtype=bool),
+            "terminal": jnp.zeros((n_envs,), dtype=bool),
+            "abnormal": jnp.zeros((n_envs,), dtype=bool),
+            "max_phase": jnp.full(
+                (n_envs,), int(TaskPhase.APPROACH), dtype=jnp.int32
+            ),
+            "first_phase_steps": first_phase_steps,
+            "completion_step": jnp.full((n_envs,), -1, dtype=jnp.int32),
+            "terminal_step": jnp.full((n_envs,), -1, dtype=jnp.int32),
+            "last_goal_distance": state.metrics["object_to_goal_distance"],
+            "minimum_goal_distance": state.metrics[
+                "object_to_goal_distance"
+            ],
+            "last_end_effector_distance": state.metrics[
+                "end_effector_to_push_distance"
+            ],
+            "maximum_object_speed": jnp.zeros((n_envs,)),
+            "peak_object_speed_step": jnp.full(
+                (n_envs,), -1, dtype=jnp.int32
+            ),
+            "minimum_object_height": jnp.full((n_envs,), jnp.inf),
+            "maximum_object_height": jnp.full((n_envs,), -jnp.inf),
+            "maximum_tilt_deg": jnp.zeros((n_envs,)),
+            "maximum_abs_action": jnp.zeros((n_envs,)),
+            "active_step_count": jnp.zeros((n_envs,), dtype=jnp.int32),
+            "illegal_contact_count": jnp.zeros((n_envs,), dtype=jnp.int32),
+            "workspace_bounds_count": jnp.zeros((n_envs,), dtype=jnp.int32),
+            "nonfinite_state_count": jnp.zeros((n_envs,), dtype=jnp.int32),
+            "nonfinite_action_count": jnp.zeros((n_envs,), dtype=jnp.int32),
+            "action_saturation_count": jnp.zeros((n_envs,), dtype=jnp.int32),
+            "action_saturation_total": jnp.zeros((n_envs,)),
+        }
+
+        def scan_step(carry, _, policy=action_fn):
+            current_state, current = carry
+            active = current["active"]
+            actions = policy(current_state.obs)
+            next_state = wrapped.step(current_state, actions)
+            steps = next_state.info["steps"].astype(jnp.int32)
+            phase = next_state.metrics["task_phase"].astype(jnp.int32)
+            goal_distance = next_state.metrics["object_to_goal_distance"]
+            object_speed = jnp.linalg.norm(
+                next_state.info["object_qvel"][:, :2], axis=-1
+            )
+            object_height = next_state.metrics["object_height"]
+            finite_action = jnp.all(jnp.isfinite(actions), axis=-1)
+            absolute_action = jnp.abs(actions)
+            saturated_action = jnp.any(absolute_action >= 0.95, axis=-1)
+            saturation_fraction = jnp.mean(
+                (absolute_action >= 0.95).astype(jnp.float32), axis=-1
+            )
+            new_speed_peak = active & (
+                object_speed > current["maximum_object_speed"]
+            )
+
+            phase_ids = jnp.arange(len(TaskPhase), dtype=jnp.int32)[:, None]
+            reached_phase = active[None, :] & (phase[None, :] >= phase_ids)
+            first_phase_steps = jnp.where(
+                reached_phase & (current["first_phase_steps"] < 0),
+                steps[None, :],
+                current["first_phase_steps"],
+            )
+            terminal_now = active & next_state.done.astype(bool)
+            success_now = terminal_now & (
+                next_state.metrics["success"] > 0.0
+            )
+            abnormal_now = terminal_now & ~success_now
+            current = {
+                **current,
+                "active": active & ~terminal_now,
+                "success": current["success"] | success_now,
+                "terminal": current["terminal"] | terminal_now,
+                "abnormal": current["abnormal"] | abnormal_now,
+                "max_phase": jnp.where(
+                    active,
+                    jnp.maximum(current["max_phase"], phase),
+                    current["max_phase"],
+                ),
+                "first_phase_steps": first_phase_steps,
+                "completion_step": jnp.where(
+                    success_now & (current["completion_step"] < 0),
+                    steps,
+                    current["completion_step"],
+                ),
+                "terminal_step": jnp.where(
+                    terminal_now & (current["terminal_step"] < 0),
+                    steps,
+                    current["terminal_step"],
+                ),
+                "last_goal_distance": jnp.where(
+                    active, goal_distance, current["last_goal_distance"]
+                ),
+                "minimum_goal_distance": jnp.where(
+                    active,
+                    jnp.minimum(current["minimum_goal_distance"], goal_distance),
+                    current["minimum_goal_distance"],
+                ),
+                "last_end_effector_distance": jnp.where(
+                    active,
+                    next_state.metrics["end_effector_to_push_distance"],
+                    current["last_end_effector_distance"],
+                ),
+                "maximum_object_speed": jnp.where(
+                    active,
+                    jnp.maximum(current["maximum_object_speed"], object_speed),
+                    current["maximum_object_speed"],
+                ),
+                "peak_object_speed_step": jnp.where(
+                    new_speed_peak,
+                    steps,
+                    current["peak_object_speed_step"],
+                ),
+                "minimum_object_height": jnp.where(
+                    active,
+                    jnp.minimum(current["minimum_object_height"], object_height),
+                    current["minimum_object_height"],
+                ),
+                "maximum_object_height": jnp.where(
+                    active,
+                    jnp.maximum(current["maximum_object_height"], object_height),
+                    current["maximum_object_height"],
+                ),
+                "maximum_tilt_deg": jnp.where(
+                    active,
+                    jnp.maximum(
+                        current["maximum_tilt_deg"],
+                        next_state.metrics["tilt_deg"],
+                    ),
+                    current["maximum_tilt_deg"],
+                ),
+                "maximum_abs_action": jnp.where(
+                    active,
+                    jnp.maximum(
+                        current["maximum_abs_action"],
+                        jnp.max(
+                            jnp.nan_to_num(
+                                absolute_action,
+                                nan=jnp.inf,
+                                posinf=jnp.inf,
+                                neginf=jnp.inf,
+                            ),
+                            axis=-1,
+                        ),
+                    ),
+                    current["maximum_abs_action"],
+                ),
+                "active_step_count": current["active_step_count"]
+                + active.astype(jnp.int32),
+                "illegal_contact_count": current["illegal_contact_count"]
+                + (
+                    active
+                    & (next_state.metrics["illegal_contact"] > 0.0)
+                ).astype(jnp.int32),
+                "workspace_bounds_count": current["workspace_bounds_count"]
+                + (
+                    active
+                    & (next_state.metrics["workspace_bounds"] > 0.0)
+                ).astype(jnp.int32),
+                "nonfinite_state_count": current["nonfinite_state_count"]
+                + (
+                    active
+                    & (next_state.metrics["nonfinite_state"] > 0.0)
+                ).astype(jnp.int32),
+                "nonfinite_action_count": current["nonfinite_action_count"]
+                + (active & ~finite_action).astype(jnp.int32),
+                "action_saturation_count": current["action_saturation_count"]
+                + (active & saturated_action).astype(jnp.int32),
+                "action_saturation_total": current["action_saturation_total"]
+                + jnp.where(active, saturation_fraction, 0.0),
+            }
+            return (next_state, current), None
+
+        def make_chunk_runner(length: int):
+            def run_chunk(current_state, current):
+                (next_state, next_accumulator), _ = jax.lax.scan(
+                    scan_step,
+                    (current_state, current),
+                    xs=None,
+                    length=length,
+                )
+                return next_state, next_accumulator
+
+            return jax.jit(run_chunk)
+
+        full_chunk_count, remainder = divmod(n_steps, chunk_steps)
+        full_chunk = make_chunk_runner(chunk_steps)
+        for _ in range(full_chunk_count):
+            state, accumulator = full_chunk(state, accumulator)
+        if remainder:
+            tail_chunk = make_chunk_runner(remainder)
+            state, accumulator = tail_chunk(state, accumulator)
+        accumulator = jax.device_get(accumulator)
+        initial_object_position = np.asarray(
+            jax.device_get(initial_object_position)
+        )
+
+        success = accumulator["success"]
+        terminal = accumulator["terminal"]
+        abnormal = accumulator["abnormal"]
+        max_phase = accumulator["max_phase"]
+        active_steps = accumulator["active_step_count"]
+        result = {
+            "evaluation_implementation": "chunked_jit",
+            "evaluation_chunk_steps": chunk_steps,
+            "push_episode_count": n_envs,
+            "push_success_count": int(np.sum(success)),
+            "push_success_rate": float(np.mean(success)),
+            "push_terminal_count": int(np.sum(terminal)),
+            "push_abnormal_termination_count": int(np.sum(abnormal)),
+            "push_horizon_incomplete_count": int(
+                np.sum(accumulator["active"])
+            ),
+            "push_reached_align_count": int(
+                np.sum(max_phase >= int(TaskPhase.ALIGN))
+            ),
+            "push_reached_push_count": int(
+                np.sum(max_phase >= int(TaskPhase.PUSH))
+            ),
+            "push_reached_hold_count": int(
+                np.sum(max_phase >= int(TaskPhase.HOLD))
+            ),
+            "push_success_by_env": _integer_tuple(accumulator["success"]),
+            "push_terminal_by_env": _integer_tuple(accumulator["terminal"]),
+            "push_abnormal_by_env": _integer_tuple(accumulator["abnormal"]),
+            "push_max_phase_by_env": _integer_tuple(accumulator["max_phase"]),
+            "push_completion_step_by_env": _integer_tuple(
+                accumulator["completion_step"]
+            ),
+            "push_terminal_step_by_env": _integer_tuple(
+                accumulator["terminal_step"]
+            ),
+            "push_initial_object_x_by_env": tuple(
+                float(value) for value in initial_object_position[:, 0]
+            ),
+            "push_initial_object_y_by_env": tuple(
+                float(value) for value in initial_object_position[:, 1]
+            ),
+            "push_final_goal_distance_by_env": _float_tuple(
+                accumulator["last_goal_distance"]
+            ),
+            "push_min_goal_distance_by_env": _float_tuple(
+                accumulator["minimum_goal_distance"]
+            ),
+            "push_final_end_effector_distance_by_env": _float_tuple(
+                accumulator["last_end_effector_distance"]
+            ),
+            "push_max_object_speed_by_env": _float_tuple(
+                accumulator["maximum_object_speed"]
+            ),
+            "push_peak_step_by_env": _integer_tuple(
+                accumulator["peak_object_speed_step"]
+            ),
+            "push_min_object_height_by_env": _float_tuple(
+                accumulator["minimum_object_height"]
+            ),
+            "push_max_object_height_by_env": _float_tuple(
+                accumulator["maximum_object_height"]
+            ),
+            "push_active_steps_by_env": _integer_tuple(
+                accumulator["active_step_count"]
+            ),
+            "push_mean_final_goal_distance": float(
+                np.mean(accumulator["last_goal_distance"])
+            ),
+            "push_mean_min_goal_distance": float(
+                np.mean(accumulator["minimum_goal_distance"])
+            ),
+            "push_max_object_speed": float(
+                np.max(accumulator["maximum_object_speed"])
+            ),
+            "push_min_object_height": float(
+                np.min(accumulator["minimum_object_height"])
+            ),
+            "push_max_object_height": float(
+                np.max(accumulator["maximum_object_height"])
+            ),
+            "max_tilt_deg": float(np.max(accumulator["maximum_tilt_deg"])),
+            "max_abs_action": float(
+                np.max(accumulator["maximum_abs_action"])
+            ),
+            "illegal_contact_count": int(
+                np.sum(accumulator["illegal_contact_count"])
+            ),
+            "workspace_bounds_count": int(
+                np.sum(accumulator["workspace_bounds_count"])
+            ),
+            "nonfinite_state_count": int(
+                np.sum(accumulator["nonfinite_state_count"])
+            ),
+            "nonfinite_action_count": int(
+                np.sum(accumulator["nonfinite_action_count"])
+            ),
+            "action_saturation_count": int(
+                np.sum(accumulator["action_saturation_count"])
+            ),
+            "action_saturation_fraction": float(
+                np.sum(accumulator["action_saturation_total"])
+                / max(int(np.sum(active_steps)), 1)
+            ),
+        }
+        first_phase_steps = accumulator["first_phase_steps"]
+        for phase in TaskPhase:
+            result[f"push_first_{phase.name.lower()}_step_by_env"] = tuple(
+                int(value) for value in first_phase_steps[int(phase)]
+            )
+        result["qualification_gates"] = _push_qualification_gates(
+            result,
+            goal_threshold=float(env._goal_threshold),
+            object_speed_limit=float(env._object_speed_limit),
+            object_height_tolerance=float(env._object_height_tolerance),
+        )
+        result["qualification_gate_pass"] = all(
+            result["qualification_gates"].values()
+        )
+        results[policy_name] = result
+    return results
+
+
+def _write_push_qualification_manifest(
+    output_dir: str | Path,
+    *,
+    config_path: str,
+    config_sha256: str,
+    params_path: str,
+    seed: int,
+    n_steps: int,
+    chunk_steps: int,
+    walltime_seconds: float,
+    results: dict[str, object],
+) -> Path:
+    destination = Path(output_dir)
+    if destination.exists():
+        raise FileExistsError(
+            f"refusing to overwrite qualification output: {destination}"
+        )
+    destination.mkdir(parents=True)
+    manifest = {
+        "schema_version": 1,
+        "status": "complete",
+        "commit": _git_head(),
+        "config_path": str(Path(config_path).as_posix()),
+        "config_sha256": config_sha256,
+        "params_path": str(Path(params_path).name),
+        "params_sha256": sha256_path(params_path),
+        "seed": seed,
+        "num_envs": 1,
+        "num_steps": n_steps,
+        "implementation": "chunked_jit",
+        "chunk_steps": chunk_steps,
+        "walltime_seconds": walltime_seconds,
+        "jax_backend": jax.default_backend(),
+        "jax_devices": [str(device) for device in jax.devices()],
+        "results": _json_compatible(results),
+    }
+    manifest_path = destination / "manifest.json"
+    temporary_path = destination / "manifest.json.tmp"
+    temporary_path.write_text(
+        json.dumps(
+            manifest,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(manifest_path)
+    return manifest_path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/locomotion.yaml")
@@ -1226,6 +1734,23 @@ def main() -> int:
         help=(
             "Override manual_evaluation.seed for an isolated evaluation "
             "process without changing the training seed."
+        ),
+    )
+    parser.add_argument(
+        "--eval-implementation",
+        choices=("sequential_python_loop", "chunked_jit"),
+        help="Override manual_evaluation.implementation.",
+    )
+    parser.add_argument(
+        "--eval-chunk-steps",
+        type=int,
+        help="Control steps per bounded JIT scan for chunked Push evaluation.",
+    )
+    parser.add_argument(
+        "--eval-output-dir",
+        help=(
+            "Write a new immutable chunked Push qualification manifest. "
+            "The destination must not already exist."
         ),
     )
     parser.add_argument(
@@ -1299,6 +1824,16 @@ def main() -> int:
         else args.eval_num_steps
     )
     eval_seed = _resolve_evaluation_seed(evaluation["seed"], args.eval_seed)
+    eval_implementation = (
+        evaluation.get("implementation", "sequential_python_loop")
+        if args.eval_implementation is None
+        else args.eval_implementation
+    )
+    eval_chunk_steps = (
+        int(evaluation.get("chunk_steps", 8))
+        if args.eval_chunk_steps is None
+        else args.eval_chunk_steps
+    )
     checkpoint_interval_steps = (
         checkpoint["interval_steps"]
         if args.checkpoint_interval_steps is None
@@ -1361,6 +1896,25 @@ def main() -> int:
         parser.error(
             "--determinism-reference-dir requires --determinism-audit-dir"
         )
+    if eval_implementation == "chunked_jit":
+        if args.task != "push":
+            parser.error("chunked JIT evaluation is only available for --task push")
+        if not args.eval_only or not args.params_in:
+            parser.error(
+                "chunked JIT qualification requires --eval-only with frozen "
+                "--params-in"
+            )
+        if args.skip_eval or args.determinism_audit_dir:
+            parser.error(
+                "chunked JIT qualification cannot be skipped or combined with "
+                "a determinism audit"
+            )
+        if eval_num_envs != 1:
+            parser.error("chunked JIT qualification requires --eval-num-envs 1")
+    if args.eval_output_dir and eval_implementation != "chunked_jit":
+        parser.error("--eval-output-dir requires --eval-implementation chunked_jit")
+    if args.eval_output_dir and Path(args.eval_output_dir).exists():
+        parser.error("--eval-output-dir must not already exist")
     if args.determinism_audit_dir:
         if args.task != "push":
             parser.error("determinism audit is only available for --task push")
@@ -1400,6 +1954,7 @@ def main() -> int:
         or eval_num_envs <= 0
         or eval_num_steps <= 0
         or eval_seed < 0
+        or eval_chunk_steps <= 0
         or not policy_hidden_layer_sizes
         or not value_hidden_layer_sizes
         or any(size <= 0 for size in policy_hidden_layer_sizes)
@@ -1410,6 +1965,8 @@ def main() -> int:
             "learning rate, PPO batch, network, and checkpoint dimensions must "
             "be positive; evaluation seed must be non-negative"
         )
+    if eval_implementation == "chunked_jit" and eval_chunk_steps > 64:
+        parser.error("chunked JIT evaluation size must not exceed 64 control steps")
     push_eval_mode = None
     if args.task == "push" and not args.skip_eval:
         try:
@@ -1830,6 +2387,58 @@ def main() -> int:
             f"external_discrete_outcome_match="
             f"{manifest['external_discrete_outcome_match']} "
             f"manifest={Path(args.determinism_audit_dir) / 'manifest.json'}",
+            flush=True,
+        )
+        return 0
+    if eval_implementation == "chunked_jit":
+        print(
+            "PUSH_QUALIFICATION_START implementation=chunked_jit "
+            f"policies={','.join(action_fns)} num_envs={eval_num_envs} "
+            f"num_steps={eval_num_steps} seed={eval_seed} "
+            f"chunk_steps={eval_chunk_steps}",
+            flush=True,
+        )
+        started = time.perf_counter()
+        results = _chunked_push_eval(
+            eval_env,
+            action_fns,
+            n_envs=eval_num_envs,
+            n_steps=eval_num_steps,
+            seed=eval_seed,
+            chunk_steps=eval_chunk_steps,
+        )
+        walltime_seconds = time.perf_counter() - started
+        for policy_name, policy_metrics in results.items():
+            print(
+                "PUSH_QUALIFICATION "
+                f"policy={policy_name} "
+                + json.dumps(
+                    _json_compatible(policy_metrics),
+                    allow_nan=False,
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+        manifest_path = None
+        if args.eval_output_dir:
+            manifest_path = _write_push_qualification_manifest(
+                args.eval_output_dir,
+                config_path=args.config,
+                config_sha256=config_sha256,
+                params_path=args.params_in,
+                seed=eval_seed,
+                n_steps=eval_num_steps,
+                chunk_steps=eval_chunk_steps,
+                walltime_seconds=walltime_seconds,
+                results=results,
+            )
+        gate_policy = "trained" if "trained" in results else next(iter(results))
+        print(
+            "PUSH_QUALIFICATION_DONE "
+            f"policy={gate_policy} "
+            f"gate_pass={results[gate_policy]['qualification_gate_pass']} "
+            f"walltime_seconds={walltime_seconds:.6f} "
+            f"manifest={manifest_path}",
             flush=True,
         )
         return 0
