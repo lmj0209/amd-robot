@@ -63,7 +63,7 @@ def _manifest() -> dict[str, object]:
         "implementation": "chunked_jit",
         "chunk_steps": 2,
         "jax_backend": "gpu",
-        "jax_devices": ["RocmDevice(id=0)"],
+        "jax_devices": ["rocm:0"],
         "results": {"trained": _trained_result()},
     }
 
@@ -111,7 +111,7 @@ def test_valid_seed_manifest_is_bound_to_rocm_inputs():
         ("seed", 101),
         ("num_envs", 2),
         ("jax_backend", "cpu"),
-        ("jax_devices", ["CpuDevice(id=0)"]),
+        ("jax_devices", ["cuda:0"]),
     ],
 )
 def test_seed_manifest_rejects_provenance_mismatch(field: str, value: object):
@@ -119,6 +119,13 @@ def test_seed_manifest_rejects_provenance_mismatch(field: str, value: object):
     manifest[field] = value
     with pytest.raises(ValueError, match="binding failed"):
         _validate_seed_manifest(manifest, spec=_spec(), seed=100)
+
+
+def test_seed_manifest_accepts_legacy_rocm_device_rendering():
+    manifest = _manifest()
+    manifest["jax_devices"] = ["RocmDevice(id=0)"]
+    trained = _validate_seed_manifest(manifest, spec=_spec(), seed=100)
+    assert trained["qualification_gate_pass"] is True
 
 
 def test_seed_manifest_rejects_inconsistent_gate_rollup():

@@ -129,7 +129,7 @@ def _validate_seed_manifest(
     devices = manifest.get("jax_devices")
     if not isinstance(devices, list) or len(devices) != 1:
         mismatches.append("jax_devices")
-    elif "RocmDevice" not in str(devices[0]):
+    elif "rocm" not in str(devices[0]).lower():
         mismatches.append("jax_devices")
     results = manifest.get("results")
     if not isinstance(results, dict) or set(results) != {"trained"}:
