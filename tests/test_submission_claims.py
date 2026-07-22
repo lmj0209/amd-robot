@@ -1,8 +1,33 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_chunked_push_cross_validation_is_not_overclaimed() -> None:
+    evidence = json.loads(
+        (
+            REPO_ROOT
+            / "benchmarks"
+            / "raw"
+            / "push_chunked_cross_validation_2026-07-21.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert evidence["status"] == "pass"
+    assert evidence["evidence_class"] == "implementation_cross_validation"
+    assert evidence["qualification_claim"] is False
+    assert evidence["decision"]["next_gate"] == (
+        "predeclared held-out 100-seed matrix"
+    )
+    assert len(evidence["records"]) == 2
+    for record in evidence["records"]:
+        assert record["candidate"]["gate_pass"] is True
+        assert record["discrete_outcome_match"] is True
+        assert record["safety_classification_match"] is True
+        assert len(record["candidate"]["manifest_sha256"]) == 64
 
 
 def test_rendered_submission_cards_use_isolated_evaluation_claims() -> None:

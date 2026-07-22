@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "status": "pass",
+  "evidence_class": "implementation_cross_validation",
+  "qualification_claim": false,
+  "date_utc": "2026-07-21",
+  "platform": {
+    "accelerator_count": 1,
+    "accelerator": "Radeon PRO W7900",
+    "architecture": "gfx1100",
+    "rocm": "7.2.1",
+    "jax": "0.10.2",
+    "backend": "gpu",
+    "device": "rocm:0"
+  },
+  "inputs": {
+    "config": "configs/push_stage2_near_field_solver16_position_x_2mm_diagnostic.yaml",
+    "config_sha256": "fe732e47c1398f5f8f15bda88bb1c424a9e36952dd03175a0fdd42b367793c42",
+    "params_sha256": "f033f9ff1ff23304b05ddeec9346d4f681ec5f4dbe265c5000804317916f9d0b",
+    "num_envs": 1,
+    "num_steps": 4608,
+    "policy": "trained_deterministic"
+  },
+  "implementations": {
+    "reference": {
+      "name": "sequential_python_loop",
+      "commit": "37dc4421743a58b3ff4d2a1522e99bdf80fcdfa4",
+      "process_model": "one fresh process per seed"
+    },
+    "candidate": {
+      "name": "chunked_jit",
+      "commit": "560530b989dc1356a959fd3aeb6aa0c495da69dd",
+      "chunk_steps": 2,
+      "process_model": "one fresh process per seed"
+    }
+  },
+  "records": [
+    {
+      "seed": 777,
+      "initial_object_x": 0.798115074634552,
+      "reference": {
+        "success": true,
+        "terminal": true,
+        "abnormal": false,
+        "final_goal_distance": 0.07993579655885696,
+        "maximum_object_speed": 0.29558897018432617,
+        "minimum_object_height": 0.0985463559627533,
+        "maximum_object_height": 0.10463719815015793,
+        "illegal_contact_count": 0,
+        "nonfinite_state_count": 0,
+        "action_saturation_fraction": 0.0
+      },
+      "candidate": {
+        "manifest_sha256": "0df7a23719c44bc48cff8dacc89f68c2c792f1dc716dab875cc4f82851f94d31",
+        "gate_pass": true,
+        "success": true,
+        "terminal": true,
+        "abnormal": false,
+        "completion_step": 4031,
+        "final_goal_distance": 0.07418636977672577,
+        "maximum_object_speed": 0.3337864875793457,
+        "minimum_object_height": 0.09840389341115952,
+        "maximum_object_height": 0.10571182519197464,
+        "illegal_contact_count": 0,
+        "workspace_bounds_count": 0,
+        "nonfinite_state_count": 0,
+        "nonfinite_action_count": 0,
+        "action_saturation_count": 0,
+        "walltime_seconds": 563.8698056458961
+      },
+      "discrete_outcome_match": true,
+      "safety_classification_match": true
+    },
+    {
+      "seed": 778,
+      "initial_object_x": 0.7982335686683655,
+      "reference": {
+        "success": true,
+        "terminal": true,
+        "abnormal": false,
+        "final_goal_distance": 0.07489612698554993,
+        "maximum_object_speed": 0.3626525104045868,
+        "minimum_object_height": 0.09887216240167618,
+        "maximum_object_height": 0.10336833447217941,
+        "illegal_contact_count": 0,
+        "nonfinite_state_count": 0,
+        "action_saturation_fraction": 0.0
+      },
+      "candidate": {
+        "manifest_sha256": "6829753f37fb646ff6c4ff98184865920a53362381bcb5713e5f5851a550a914",
+        "gate_pass": true,
+        "success": true,
+        "terminal": true,
+        "abnormal": false,
+        "completion_step": 4104,
+        "final_goal_distance": 0.07970675081014633,
+        "maximum_object_speed": 0.2732070982456207,
+        "minimum_object_height": 0.09864197671413422,
+        "maximum_object_height": 0.10410287231206894,
+        "illegal_contact_count": 0,
+        "workspace_bounds_count": 0,
+        "nonfinite_state_count": 0,
+        "nonfinite_action_count": 0,
+        "action_saturation_count": 0,
+        "walltime_seconds": 278.6565325271804
+      },
+      "discrete_outcome_match": true,
+      "safety_classification_match": true
+    }
+  ],
+  "decision": {
+    "cross_validation_gate_pass": true,
+    "seeds_compared": 2,
+    "discrete_outcome_matches": 2,
+    "safety_classification_matches": 2,
+    "continuous_values_required_exact": false,
+    "next_gate": "predeclared held-out 100-seed matrix"
+  }
+}
