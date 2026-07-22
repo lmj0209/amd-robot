@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
+import math
 import textwrap
 from pathlib import Path
+from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
@@ -213,7 +216,117 @@ def _rocm_slide() -> Image.Image:
     return image
 
 
-def _evaluation_slide() -> Image.Image:
+def _load_qualification_matrix(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    spec = payload.get("spec")
+    summary = payload.get("summary")
+    records = payload.get("records")
+    if not isinstance(spec, dict) or not isinstance(summary, dict):
+        raise ValueError("qualification matrix is missing its spec or summary")
+    if not isinstance(records, list):
+        raise ValueError("qualification matrix records must be a list")
+
+    expected = summary.get("expected_episode_count")
+    completed = summary.get("completed_episode_count")
+    status = summary.get("status")
+    if expected != 100:
+        raise ValueError("submission evidence requires exactly 100 episodes")
+    if completed != expected or len(records) != expected:
+        raise ValueError("qualification matrix is incomplete")
+    if status not in {"pass", "fail"} or payload.get("status") != status:
+        raise ValueError("qualification matrix status is invalid or inconsistent")
+    seeds = spec.get("seeds")
+    if not isinstance(seeds, list) or len(seeds) != expected:
+        raise ValueError("qualification matrix seed specification is invalid")
+    if [record.get("seed") for record in records] != seeds:
+        raise ValueError("qualification matrix records do not match seed order")
+
+    safety_fields = (
+        "illegal_contact_count",
+        "workspace_bounds_count",
+        "nonfinite_state_count",
+        "nonfinite_action_count",
+        "action_saturation_count",
+    )
+    numeric_fields = (
+        "final_goal_distance",
+        "maximum_object_speed",
+        "minimum_object_height",
+        "maximum_object_height",
+    )
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("qualification matrix record must be an object")
+        if not isinstance(record.get("gate_pass"), bool) or not isinstance(
+            record.get("success"), bool
+        ):
+            raise ValueError("qualification matrix decisions must be boolean")
+        values = [record.get(field) for field in numeric_fields]
+        if not all(
+            isinstance(value, (int, float)) and math.isfinite(value)
+            for value in values
+        ):
+            raise ValueError("qualification matrix contains non-finite metrics")
+        if not all(
+            isinstance(record.get(field), int) and record[field] >= 0
+            for field in safety_fields
+        ):
+            raise ValueError("qualification matrix contains invalid safety counts")
+
+    gate_pass_count = sum(record["gate_pass"] for record in records)
+    success_count = sum(record["success"] for record in records)
+    safety_totals = {
+        field: sum(record[field] for record in records) for field in safety_fields
+    }
+    maximum_object_speed = max(
+        record["maximum_object_speed"] for record in records
+    )
+    maximum_goal_distance = max(
+        record["final_goal_distance"] for record in records
+    )
+    if summary.get("gate_pass_count") != gate_pass_count:
+        raise ValueError("qualification matrix gate total is inconsistent")
+    if summary.get("success_count") != success_count:
+        raise ValueError("qualification matrix success total is inconsistent")
+    if summary.get("safety_totals") != safety_totals:
+        raise ValueError("qualification matrix safety totals are inconsistent")
+    if not math.isclose(
+        summary.get("maximum_object_speed", math.nan), maximum_object_speed
+    ):
+        raise ValueError("qualification matrix speed maximum is inconsistent")
+    if not math.isclose(
+        summary.get("final_goal_distance", {}).get("maximum", math.nan),
+        maximum_goal_distance,
+    ):
+        raise ValueError("qualification matrix goal maximum is inconsistent")
+    wilson = summary.get("success_rate_wilson_95")
+    if (
+        not isinstance(wilson, list)
+        or len(wilson) != 2
+        or not all(isinstance(value, (int, float)) for value in wilson)
+    ):
+        raise ValueError("qualification matrix Wilson interval is missing")
+
+    return {
+        "status": status,
+        "expected": expected,
+        "gate_pass_count": gate_pass_count,
+        "success_count": success_count,
+        "success_wilson_95": wilson,
+        "maximum_object_speed": maximum_object_speed,
+        "maximum_goal_distance": maximum_goal_distance,
+        "safety_totals": safety_totals,
+        "seed_start": seeds[0],
+        "seed_end": seeds[-1],
+        "commit": spec.get("commit"),
+        "config_sha256": spec.get("config_sha256"),
+        "params_sha256": spec.get("params_sha256"),
+    }
+
+
+def _evaluation_slide(matrix: dict[str, Any] | None = None) -> Image.Image:
+    if matrix is not None:
+        return _matrix_evaluation_slide(matrix)
     image, draw = _canvas("Measured task result")
     draw.text(
         (50, 61),
@@ -243,6 +356,69 @@ def _evaluation_slide() -> Image.Image:
         (72, 398),
         "Disclosure: batched gfx1100 Push is diagnostic-only.",
         font=BODY,
+        fill=YELLOW,
+    )
+    return image
+
+
+def _matrix_evaluation_slide(matrix: dict[str, Any]) -> Image.Image:
+    image, draw = _canvas("Held-out task result")
+    draw.text(
+        (50, 61),
+        "Single-environment +/-2 mm matrix",
+        font=TITLE,
+        fill=TEXT,
+    )
+    count = matrix["expected"]
+    metrics = [
+        (f"{matrix['success_count']}/{count}", "task success", GREEN),
+        (
+            f"{matrix['gate_pass_count']}/{count}",
+            "all gates pass",
+            GREEN if matrix["status"] == "pass" else YELLOW,
+        ),
+        (
+            f"{matrix['maximum_object_speed']:.3f}",
+            "maximum speed, m/s",
+            CYAN,
+        ),
+        (
+            f"{matrix['maximum_goal_distance']:.4f}",
+            "worst final error, m",
+            CYAN,
+        ),
+    ]
+    for index, (value, label, color) in enumerate(metrics):
+        x0 = 45 + index * 226
+        draw.rounded_rectangle((x0, 145, x0 + 195, 270), radius=15, fill=PANEL)
+        draw.text((x0 + 16, 164), value, font=METRIC, fill=color)
+        draw.text((x0 + 16, 222), label, font=SMALL, fill=MUTED)
+
+    lower, upper = matrix["success_wilson_95"]
+    safety_total = sum(matrix["safety_totals"].values())
+    draw.text(
+        (53, 308),
+        f"Success 95% Wilson interval: {lower:.3f}-{upper:.3f}",
+        font=SUBTITLE,
+        fill=TEXT,
+    )
+    draw.text(
+        (53, 350),
+        f"Registered safety-event total: {safety_total}",
+        font=SUBTITLE,
+        fill=GREEN if safety_total == 0 else YELLOW,
+    )
+    draw.text(
+        (53, 393),
+        f"Seeds {matrix['seed_start']}-{matrix['seed_end']} | fresh process each",
+        font=SMALL,
+        fill=MUTED,
+    )
+    draw.rounded_rectangle((50, 427, 910, 474), radius=12, fill="#2d1f16")
+    draw.text(
+        (72, 438),
+        "One ROCm device, one environment; batched Push remains diagnostic-only.",
+        font=SMALL,
         fill=YELLOW,
     )
     return image
@@ -368,12 +544,18 @@ def main() -> None:
     parser.add_argument("--benchmark-chart", type=Path, required=True)
     parser.add_argument("--rollout-mid", type=Path, required=True)
     parser.add_argument("--rollout-final", type=Path, required=True)
+    parser.add_argument("--qualification-manifest", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
     for source in (args.benchmark_chart, args.rollout_mid, args.rollout_final):
         if not source.is_file():
             raise FileNotFoundError(source)
+    matrix = None
+    if args.qualification_manifest is not None:
+        if not args.qualification_manifest.is_file():
+            raise FileNotFoundError(args.qualification_manifest)
+        matrix = _load_qualification_matrix(args.qualification_manifest)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     slides = {
@@ -381,7 +563,7 @@ def main() -> None:
         "02_application.png": _problem_slide(args.rollout_mid),
         "03_architecture.png": _architecture_slide(),
         "04_rocm_engineering.png": _rocm_slide(),
-        "06_evaluation.png": _evaluation_slide(),
+        "06_evaluation.png": _evaluation_slide(matrix),
         "07_benchmark.png": _benchmark_slide(args.benchmark_chart),
         "08_training.png": _training_slide(),
         "09_reproduction.png": _reproduction_slide(),
